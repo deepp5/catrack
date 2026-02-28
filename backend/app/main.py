@@ -127,7 +127,7 @@ def analyze(req: AnalyzeRequest):
         }
     )
 
-    return response.output[0].content[0].text
+    return json.loads(response.output[0].content[0].text)
 
 
 @app.get("/")
