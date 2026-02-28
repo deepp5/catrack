@@ -393,11 +393,12 @@ def process_next_audio():
         raise HTTPException(status_code=500, detail=f"processing failed: {e}")
 
 
+
 # New endpoint for voice analysis
 @app.post("/voice-analyze")
 async def voice_analyze(
-    audio_file: UploadFile = File(...),
-    checklist_json: str = Form(...)
+    inspection_id: str = Form(...),
+    audio_file: UploadFile = File(...)
 ):
     try:
         # 1️⃣ Parse checklist JSON sent from frontend
@@ -428,13 +429,27 @@ async def voice_analyze(
 
         if not isinstance(current_checklist_state, dict):
             raise HTTPException(status_code=400, detail="checklist_json must be a JSON object (dictionary)")
+        #Fetch inspection from DB
+        resp = (
+            supabase.table("inspections")
+            .select("id, checklist_json")
+            .eq("id", inspection_id)
+            .limit(1)
+            .execute()
+        )
 
-        # 2️⃣ Read audio bytes
+        rows = resp.data or []
+        if not rows:
+            raise HTTPException(status_code=404, detail="Inspection not found")
+
+        checklist_state = rows[0]["checklist_json"]
+
+        #Read audio bytes
         audio_bytes = await audio_file.read()
         f = io.BytesIO(audio_bytes)
         f.name = audio_file.filename or "audio.m4a"
 
-        # 3️⃣ Transcribe using OpenAI speech model
+        #Transcribe using OpenAI speech model
         tr = client.audio.transcriptions.create(
             model=TRANSCRIBE_MODEL,
             file=f,
@@ -445,12 +460,24 @@ async def voice_analyze(
         if len(transcript_text) < 3:
             raise RuntimeError("transcript too short/empty")
 
-        # 4️⃣ Run inspection AI logic
-        return run_inspection_logic(
+        #run inspection AI logic
+        result = run_inspection_logic(
             user_text=transcript_text,
-            current_checklist_state=current_checklist_state,
+            current_checklist_state=checklist_state,
             images=None
         )
+
+        #apply updates to checklist JSON
+        updates = result.get("checklist_updates", {})
+        for item_name, update_data in updates.items():
+            checklist_state[item_name] = update_data["status"]
+
+        #Save updated checklist back to DB
+        supabase.table("inspections").update(
+            {"checklist_json": checklist_state}
+        ).eq("id", inspection_id).execute()
+
+        return result
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"voice processing failed: {e}")
