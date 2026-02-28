@@ -254,6 +254,8 @@
 				DEVELOPMENT_TEAM = N5F78F29UR;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "CATrack uses the microphone to listen for voice commands during inspections.";
+				INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "CATrack uses speech recognition to process voice commands for inspection checklists.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -286,6 +288,8 @@
 				DEVELOPMENT_TEAM = N5F78F29UR;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "CATrack uses the microphone to listen for voice commands during inspections.";
+				INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "CATrack uses speech recognition to process voice commands for inspection checklists.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;

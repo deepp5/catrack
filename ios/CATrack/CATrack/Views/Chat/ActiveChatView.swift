@@ -68,11 +68,9 @@ struct ActiveChatView: View {
         .navigationBarTitleDisplayMode(.inline)
         .tint(.catYellow)
         .sheet(isPresented: $showCamera) {
-            CameraPickerView { image in
-                guard let data = image.jpegData(compressionQuality: 0.8) else { return }
-                let media = AttachedMedia(type: .image, filename: "photo.jpg", thumbnailData: data)
-                chatVM.attachMedia(media)
-            }
+            CaptureView(machineId: machine.id)
+                .environmentObject(chatVM)
+                .environmentObject(sheetVM)
         }
         .sheet(isPresented: $showVoice) {
             VoiceRecorderView { url in

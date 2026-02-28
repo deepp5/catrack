@@ -26,4 +26,8 @@ struct CATrackApp: App {
                 .preferredColorScheme(.dark)
         }
     }
+    
+    
 }
+
+

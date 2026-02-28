@@ -10,6 +10,37 @@ class APIService {
     func configure(baseURL: String) {
         self.baseURL = baseURL
     }
+    
+    func analyzeVideoCommand(userText: String,
+                             currentChecklistState: [String: String],
+                             framesBase64: [String]?) async throws -> FastAnalyzeResponse {
+
+        guard let url = URL(string: "\(baseURL)/analyze-video-command") else {
+            throw URLError(.badURL)
+        }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+
+        let body: [String: Any] = [
+            "user_text": userText,
+            "current_checklist_state": currentChecklistState,
+            "frames": framesBase64 as Any
+        ]
+        request.httpBody = try JSONSerialization.data(withJSONObject: body)
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) else {
+            let msg = String(data: data, encoding: .utf8) ?? "Bad server response"
+            throw NSError(domain: "APIService", code: (response as? HTTPURLResponse)?.statusCode ?? -1,
+                          userInfo: [NSLocalizedDescriptionKey: msg])
+        }
+
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        return try decoder.decode(FastAnalyzeResponse.self, from: data)
+    }
 
     func analyze(message: String, machineId: UUID, media: [AttachedMedia]) async throws -> AnalyzeResponse {
         guard let url = URL(string: "\(baseURL)/inspect") else {
