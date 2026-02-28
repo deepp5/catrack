@@ -24,10 +24,12 @@ final class HotwordManager: ObservableObject {
     private var lastNonEmptyTime = Date()
     private var silenceTimer: Timer?
 
+    // Tracks whether we temporarily paused for a camera snapshot
+    private(set) var isPaused = false
+
     private init() {}
 
     func requestPermissions() async throws {
-        // Fix: requestRecordPermission() no longer returns Bool directly via await — use withCheckedContinuation
         let mic = await withCheckedContinuation { (cont: CheckedContinuation<Bool, Never>) in
             AVAudioSession.sharedInstance().requestRecordPermission { granted in
                 cont.resume(returning: granted)
@@ -45,17 +47,60 @@ final class HotwordManager: ObservableObject {
         }
     }
 
+    /// Call BEFORE taking a camera snapshot — releases audio session so AVCaptureSession can use it
+    func pause() {
+        guard isListening, !isPaused else { return }
+        isPaused = true
+
+        silenceTimer?.invalidate()
+        silenceTimer = nil
+
+        task?.cancel()
+        task = nil
+
+        request?.endAudio()
+        request = nil
+
+        audioEngine.stop()
+        audioEngine.inputNode.removeTap(onBus: 0)
+
+        try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+    }
+
+    /// Call AFTER the camera snapshot is done — resumes listening for the next "Hey Cat"
+    func resume() {
+        guard isListening, isPaused else { return }
+        isPaused = false
+
+        // Clear state so user can issue another command fresh
+        isTriggered = false
+        startedAtTrigger = false
+        commandBuffer = ""
+        confirmedCommand = nil
+        liveCaption = ""
+
+        do {
+            try startAudioEngine()
+        } catch {
+            print("HotwordManager resume error:", error)
+        }
+    }
+
     func start() throws {
         if isListening { return }
         isListening = true
+        isPaused = false
         confirmedCommand = nil
         isTriggered = false
         liveCaption = ""
         startedAtTrigger = false
         commandBuffer = ""
 
+        try startAudioEngine()
+    }
+
+    private func startAudioEngine() throws {
         let session = AVAudioSession.sharedInstance()
-        // Fix: .allowBluetooth deprecated — use .allowBluetoothA2DP or just omit for recording
         try session.setCategory(.record, mode: .measurement, options: [.duckOthers, .allowBluetoothA2DP])
         try session.setActive(true, options: .notifyOthersOnDeactivation)
 
@@ -81,8 +126,10 @@ final class HotwordManager: ObservableObject {
 
             if let error {
                 Task { @MainActor in
-                    self.stop()
-                    print("Speech error:", error)
+                    // Speech recognizer auto-times out ~1min — restart silently if still active
+                    guard self.isListening, !self.isPaused else { return }
+                    print("Speech task ended, restarting:", error.localizedDescription)
+                    try? self.startAudioEngine()
                 }
                 return
             }
@@ -100,6 +147,7 @@ final class HotwordManager: ObservableObject {
 
     func stop() {
         isListening = false
+        isPaused = false
         silenceTimer?.invalidate()
         silenceTimer = nil
 
@@ -148,9 +196,19 @@ final class HotwordManager: ObservableObject {
     private func checkForEndOfSpeech() {
         guard isTriggered else { return }
 
-        if Date().timeIntervalSince(lastNonEmptyTime) > 1.0 {
+        // 1.8s gives enough time to finish speaking after "hey cat"
+        if Date().timeIntervalSince(lastNonEmptyTime) > 1.8 {
             let final = commandBuffer.trimmingCharacters(in: .whitespacesAndNewlines)
-            confirmedCommand = final.isEmpty ? "…" : final
+
+            // Only fire if we actually captured a command — ignore bare wake word with nothing after
+            if !final.isEmpty {
+                confirmedCommand = final
+            } else {
+                // Just reset, keep listening — don't crash or fire empty command
+                isTriggered = false
+                startedAtTrigger = false
+                commandBuffer = ""
+            }
 
             isTriggered = false
             startedAtTrigger = false

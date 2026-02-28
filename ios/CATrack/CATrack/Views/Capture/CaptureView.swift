@@ -15,8 +15,6 @@ struct CaptureView: View {
 
     @StateObject private var camera = CameraController()
     @State private var mode: CaptureMode = .photo
-
-    // Fix: HotwordManager is @MainActor ObservableObject — use @StateObject, not @ObservedObject
     @StateObject private var hotword = HotwordManager.shared
 
     @State private var lastHandledCommand: String? = nil
@@ -29,9 +27,11 @@ struct CaptureView: View {
 
             VStack {
                 if hotword.isTriggered {
-                    GlassHotwordOverlay(stateText: "Hey Cat…", confirmed: false)
+                    GlassHotwordOverlay(state: .listening)
                 } else if let cmd = hotword.confirmedCommand {
-                    GlassHotwordOverlay(stateText: "Heard: \(cmd)", confirmed: true)
+                    GlassHotwordOverlay(state: .captured(cmd))
+                } else if isSending {
+                    GlassHotwordOverlay(state: .processing)
                 }
                 Spacer()
             }
@@ -54,10 +54,10 @@ struct CaptureView: View {
         }
         .onDisappear {
             camera.stop()
+            hotword.stop()
         }
-        // Fix: onChange(of:perform:) deprecated in iOS 17 — use two-argument form
         .onChange(of: hotword.confirmedCommand) { _, newValue in
-            guard let cmd = newValue else { return }
+            guard let cmd = newValue, !cmd.isEmpty else { return }
             if lastHandledCommand == cmd { return }
             lastHandledCommand = cmd
             Task { await handleCommand(cmd) }
@@ -115,9 +115,7 @@ struct CaptureView: View {
 
                 Spacer()
 
-                Button {
-                    camera.flip()
-                } label: {
+                Button { camera.flip() } label: {
                     Image(systemName: "arrow.triangle.2.circlepath.camera")
                         .font(.system(size: 18, weight: .semibold))
                         .foregroundStyle(.white)
@@ -162,11 +160,25 @@ struct CaptureView: View {
     private func handleCommand(_ cmd: String) async {
         guard !isSending else { return }
         isSending = true
-        defer { isSending = false }
+        defer {
+            isSending = false
+            // Reset so the same command can fire again next time
+            lastHandledCommand = nil
+            // Resume hotword listening AFTER snapshot + API call are done
+            hotword.resume()
+        }
 
+        // 1) Pause hotword FIRST so its audio session doesn't conflict with AVCaptureSession
+        hotword.pause()
+
+        // Small delay to let AVAudioSession fully release before camera captures
+        try? await Task.sleep(nanoseconds: 150_000_000) // 0.15s
+
+        // 2) Snapshot
         guard let jpeg = await camera.captureJPEG() else { return }
         let base64 = jpeg.base64EncodedString()
 
+        // 3) Build checklist state
         let sections = sheetVM.sectionsFor(machineId)
         var currentChecklistState: [String: String] = [:]
         for sec in sections {
@@ -175,6 +187,7 @@ struct CaptureView: View {
             }
         }
 
+        // 4) Call backend
         do {
             let resp = try await APIService.shared.analyzeVideoCommand(
                 userText: cmd,
@@ -186,7 +199,12 @@ struct CaptureView: View {
             for (backendKey, upd) in resp.checklistUpdates {
                 guard let sev = FindingSeverity(rawValue: upd.status) else { continue }
                 guard let hit = findFieldByBackendKey(backendKey, in: sections) else { continue }
-                sheetUpdates.append(SheetUpdate(sheetSection: hit.sectionId, fieldId: hit.fieldId, value: sev, evidenceMediaId: nil))
+                sheetUpdates.append(SheetUpdate(
+                    sheetSection: hit.sectionId,
+                    fieldId: hit.fieldId,
+                    value: sev,
+                    evidenceMediaId: nil
+                ))
             }
             if !sheetUpdates.isEmpty {
                 sheetVM.applyUpdates(sheetUpdates, for: machineId)
