@@ -1,10 +1,11 @@
-import Foundation
-import Combine
+import Foundation  // ← ADD THIS
+import Combine     // ← ADD THIS
 
 @MainActor
 class MachineStore: ObservableObject {
     @Published var machines: [Machine] = Machine.samples
     @Published var activeMachineId: UUID?
+    @Published var activeChatMachine: Machine? = nil
 
     var activeMachine: Machine? {
         guard let id = activeMachineId else { return nil }
@@ -22,6 +23,14 @@ class MachineStore: ObservableObject {
 
     func selectMachine(_ machine: Machine) {
         activeMachineId = machine.id
+    }
+
+    func setActiveChatMachine(_ machine: Machine) {
+        activeChatMachine = machine
+    }
+
+    func clearActiveChatMachine() {
+        activeChatMachine = nil
     }
 
     func updateStatus(machineId: UUID, status: FindingSeverity) {

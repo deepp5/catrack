@@ -126,6 +126,16 @@ def start_inspection(machine_model: str):
     }).execute()
 
     return resp.data[0]
+class AnalyzeVideoCommandRequest(BaseModel):
+    user_text: str
+    current_checklist_state: Dict[str, Status]
+    frames: Optional[List[str]] = None
+
+@app.post("/analyze-video-command")
+def analyze_video_command(req: AnalyzeVideoCommandRequest):
+    return run_inspection_logic(req.user_text, req.current_checklist_state, req.frames)
+
+
 
 def run_inspection_logic(user_text: str, current_checklist_state: Dict[str, Status], images: Optional[List[str]] = None):
     canonical_keys = get_flat_checklist_keys()

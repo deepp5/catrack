@@ -39,7 +39,7 @@ struct ActiveChatView: View {
                         .padding(.top, 12)
                         .padding(.bottom, 8)
                     }
-                    .onChange(of: messages.count) { _ in
+                    .onChange(of: messages.count) { _, _ in
                         if let last = messages.last {
                             withAnimation { proxy.scrollTo(last.id, anchor: .bottom) }
                         }
@@ -68,16 +68,21 @@ struct ActiveChatView: View {
         .navigationBarTitleDisplayMode(.inline)
         .tint(.catYellow)
         .sheet(isPresented: $showCamera) {
-            CameraPickerView { image in
-                guard let data = image.jpegData(compressionQuality: 0.8) else { return }
-                let media = AttachedMedia(type: .image, filename: "photo.jpg", thumbnailData: data)
-                chatVM.attachMedia(media)
-            }
+            CaptureView(machineId: machine.id)
+                .environmentObject(chatVM)
+                .environmentObject(sheetVM)
         }
         .sheet(isPresented: $showVoice) {
-            VoiceRecorderView { url in
-                let media = AttachedMedia(type: .audio, filename: url.lastPathComponent, localURL: url)
-                chatVM.attachMedia(media)
+            VoiceRecorderView { url, duration in
+                Task {
+                    await chatVM.sendVoiceNote(
+                        url: url,
+                        duration: duration,
+                        machineId: machine.id,
+                        machine: machine,
+                        sheetVM: sheetVM
+                    )
+                }
             }
         }
         .sheet(isPresented: $showDocs) {
