@@ -7,7 +7,7 @@ class APIService {
 
     private init() {}
 
-    func configure(baseURL: String) {
+    func configure(baseURL: String) { 
         self.baseURL = baseURL
     }
 
