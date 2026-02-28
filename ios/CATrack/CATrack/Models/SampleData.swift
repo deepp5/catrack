@@ -1,36 +1,76 @@
 import Foundation
 
 // MARK: - Sample Sheet Sections
+import Foundation
+
 extension SheetSection {
     static func defaultSections() -> [SheetSection] {
         [
-            SheetSection(id: "engine", title: "Engine & Drivetrain", fields: [
-                SheetField(id: "engine_oil", label: "Engine Oil Level", status: .pass, note: "", aiPrefilled: false),
-                SheetField(id: "coolant", label: "Coolant Level", status: .pass, note: "", aiPrefilled: false),
-                SheetField(id: "belts", label: "Belts & Hoses", status: .pass, note: "", aiPrefilled: false),
-                SheetField(id: "air_filter", label: "Air Filter", status: .pass, note: "", aiPrefilled: false),
-                SheetField(id: "fuel_system", label: "Fuel System", status: .pass, note: "", aiPrefilled: false),
-            ]),
-            SheetSection(id: "hydraulics", title: "Hydraulics", fields: [
-                SheetField(id: "hyd_level", label: "Hydraulic Fluid Level", status: .pass, note: "", aiPrefilled: false),
-                SheetField(id: "hyd_hoses", label: "Hydraulic Hoses & Fittings", status: .pass, note: "", aiPrefilled: false),
-                SheetField(id: "hyd_cylinders", label: "Cylinders & Seals", status: .pass, note: "", aiPrefilled: false),
-            ]),
-            SheetSection(id: "undercarriage", title: "Undercarriage", fields: [
-                SheetField(id: "tracks", label: "Track Tension & Wear", status: .pass, note: "", aiPrefilled: false),
-                SheetField(id: "rollers", label: "Rollers & Idlers", status: .pass, note: "", aiPrefilled: false),
-                SheetField(id: "sprockets", label: "Sprockets", status: .pass, note: "", aiPrefilled: false),
-            ]),
-            SheetSection(id: "electrical", title: "Electrical", fields: [
-                SheetField(id: "battery", label: "Battery Condition", status: .pass, note: "", aiPrefilled: false),
-                SheetField(id: "lights", label: "Lights & Signals", status: .pass, note: "", aiPrefilled: false),
-                SheetField(id: "gauges", label: "Gauges & Instruments", status: .pass, note: "", aiPrefilled: false),
-            ]),
-            SheetSection(id: "safety", title: "Safety", fields: [
-                SheetField(id: "fire_ext", label: "Fire Extinguisher", status: .pass, note: "", aiPrefilled: false),
-                SheetField(id: "seatbelt", label: "Seatbelt & ROPS", status: .pass, note: "", aiPrefilled: false),
-                SheetField(id: "horn", label: "Horn & Backup Alarm", status: .pass, note: "", aiPrefilled: false),
-            ]),
+            SheetSection(
+                id: "FROM_THE_GROUND",
+                title: "From the Ground",
+                fields: [
+                    SheetField(id: "Tires, wheels, stem caps, lug nuts", label: "Tires, wheels, stem caps, lug nuts", status: .pass, note: "", aiPrefilled: false, evidenceMediaId: nil),
+                    SheetField(id: "Bucket cutting edge, moldboard", label: "Bucket cutting edge, moldboard", status: .pass, note: "", aiPrefilled: false, evidenceMediaId: nil),
+                    SheetField(id: "Bucket lift and tilt cylinders, hoses", label: "Bucket lift and tilt cylinders, hoses", status: .pass, note: "", aiPrefilled: false, evidenceMediaId: nil),
+                    SheetField(id: "Loader frame, arms", label: "Loader frame, arms", status: .pass, note: "", aiPrefilled: false, evidenceMediaId: nil),
+                    SheetField(id: "Underneath machine", label: "Underneath machine", status: .pass, note: "", aiPrefilled: false, evidenceMediaId: nil),
+                    SheetField(id: "Transmission, transfer case", label: "Transmission, transfer case", status: .pass, note: "", aiPrefilled: false, evidenceMediaId: nil),
+                    SheetField(id: "Steps and handholds", label: "Steps and handholds", status: .pass, note: "", aiPrefilled: false, evidenceMediaId: nil),
+                    SheetField(id: "Fuel tank", label: "Fuel tank", status: .pass, note: "", aiPrefilled: false, evidenceMediaId: nil),
+                    SheetField(id: "Differential and final drive oil", label: "Differential and final drive oil", status: .pass, note: "", aiPrefilled: false, evidenceMediaId: nil),
+                    SheetField(id: "Air tank", label: "Air tank", status: .pass, note: "", aiPrefilled: false, evidenceMediaId: nil),
+                    SheetField(id: "Axles, final drives, differentials, brakes", label: "Axles, final drives, differentials, brakes", status: .pass, note: "", aiPrefilled: false, evidenceMediaId: nil),
+                    SheetField(id: "Hydraulic tank", label: "Hydraulic tank", status: .pass, note: "", aiPrefilled: false, evidenceMediaId: nil),
+                    SheetField(id: "Transmission oil", label: "Transmission oil", status: .pass, note: "", aiPrefilled: false, evidenceMediaId: nil),
+                    SheetField(id: "Lights, front and rear", label: "Lights, front and rear", status: .pass, note: "", aiPrefilled: false, evidenceMediaId: nil),
+                    SheetField(id: "Battery compartment", label: "Battery compartment", status: .pass, note: "", aiPrefilled: false, evidenceMediaId: nil),
+                    SheetField(id: "Diesel exhaust fluid tank", label: "Diesel exhaust fluid tank", status: .pass, note: "", aiPrefilled: false, evidenceMediaId: nil),
+                    SheetField(id: "Overall machine", label: "Overall machine", status: .pass, note: "", aiPrefilled: false, evidenceMediaId: nil),
+                ]
+            ),
+
+            SheetSection(
+                id: "ENGINE_COMPARTMENT",
+                title: "Engine Compartment",
+                fields: [
+                    SheetField(id: "Engine oil", label: "Engine oil", status: .pass, note: "", aiPrefilled: false, evidenceMediaId: nil),
+                    SheetField(id: "Engine coolant", label: "Engine coolant", status: .pass, note: "", aiPrefilled: false, evidenceMediaId: nil),
+                    SheetField(id: "Radiator", label: "Radiator", status: .pass, note: "", aiPrefilled: false, evidenceMediaId: nil),
+                    SheetField(id: "All hoses and lines", label: "All hoses and lines", status: .pass, note: "", aiPrefilled: false, evidenceMediaId: nil),
+                    SheetField(id: "Fuel filters / water separator", label: "Fuel filters / water separator", status: .pass, note: "", aiPrefilled: false, evidenceMediaId: nil),
+                    SheetField(id: "All belts", label: "All belts", status: .pass, note: "", aiPrefilled: false, evidenceMediaId: nil),
+                    SheetField(id: "Air filter", label: "Air filter", status: .pass, note: "", aiPrefilled: false, evidenceMediaId: nil),
+                    SheetField(id: "Overall engine compartment", label: "Overall engine compartment", status: .pass, note: "", aiPrefilled: false, evidenceMediaId: nil),
+                ]
+            ),
+
+            SheetSection(
+                id: "OUTSIDE_CAB",
+                title: "Outside Cab",
+                fields: [
+                    SheetField(id: "Handholds", label: "Handholds", status: .pass, note: "", aiPrefilled: false, evidenceMediaId: nil),
+                    SheetField(id: "ROPS", label: "ROPS", status: .pass, note: "", aiPrefilled: false, evidenceMediaId: nil),
+                    SheetField(id: "Fire extinguisher", label: "Fire extinguisher", status: .pass, note: "", aiPrefilled: false, evidenceMediaId: nil),
+                    SheetField(id: "Windshield and windows", label: "Windshield and windows", status: .pass, note: "", aiPrefilled: false, evidenceMediaId: nil),
+                    SheetField(id: "Windshield wipers / washers", label: "Windshield wipers / washers", status: .pass, note: "", aiPrefilled: false, evidenceMediaId: nil),
+                    SheetField(id: "Doors", label: "Doors", status: .pass, note: "", aiPrefilled: false, evidenceMediaId: nil),
+                ]
+            ),
+
+            SheetSection(
+                id: "INSIDE_CAB",
+                title: "Inside Cab",
+                fields: [
+                    SheetField(id: "Seat", label: "Seat", status: .pass, note: "", aiPrefilled: false, evidenceMediaId: nil),
+                    SheetField(id: "Seat belt and mounting", label: "Seat belt and mounting", status: .pass, note: "", aiPrefilled: false, evidenceMediaId: nil),
+                    SheetField(id: "Horn, backup alarm, lights", label: "Horn, backup alarm, lights", status: .pass, note: "", aiPrefilled: false, evidenceMediaId: nil),
+                    SheetField(id: "Mirrors", label: "Mirrors", status: .pass, note: "", aiPrefilled: false, evidenceMediaId: nil),
+                    SheetField(id: "Cab air filter", label: "Cab air filter", status: .pass, note: "", aiPrefilled: false, evidenceMediaId: nil),
+                    SheetField(id: "Gauges, indicators, switches, controls", label: "Gauges, indicators, switches, controls", status: .pass, note: "", aiPrefilled: false, evidenceMediaId: nil),
+                    SheetField(id: "Overall cab interior", label: "Overall cab interior", status: .pass, note: "", aiPrefilled: false, evidenceMediaId: nil),
+                ]
+            ),
         ]
     }
 }

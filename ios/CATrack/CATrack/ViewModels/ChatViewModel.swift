@@ -63,7 +63,7 @@ class ChatViewModel: ObservableObject {
             var currentChecklistState: [String: String] = [:]
             for section in sections {
                 for field in section.fields {
-                    currentChecklistState[field.label] = field.status.rawValue
+                    currentChecklistState[field.id] = field.status.rawValue
                 }
             }
 
@@ -83,9 +83,9 @@ class ChatViewModel: ObservableObject {
 
             // 4) Convert resp.checklistUpdates -> [SheetUpdate]
             var sheetUpdates: [SheetUpdate] = []
-            for (itemLabel, upd) in resp.checklistUpdates {
+            for (backendKey, upd) in resp.checklistUpdates {
                 guard let sev = FindingSeverity(rawValue: upd.status) else { continue }
-                guard let hit = findFieldByLabel(itemLabel, in: sections) else { continue }
+                guard let hit = findFieldByBackendKey(backendKey, in: sections) else { continue }
 
                 sheetUpdates.append(
                     SheetUpdate(
@@ -126,9 +126,9 @@ class ChatViewModel: ObservableObject {
         }
     }
 
-    private func findFieldByLabel(_ label: String, in sections: [SheetSection]) -> (sectionId: String, fieldId: String)? {
+    private func findFieldByBackendKey(_ key: String, in sections: [SheetSection]) -> (sectionId: String, fieldId: String)? {
         for sec in sections {
-            if let f = sec.fields.first(where: { $0.label == label }) {
+            if let f = sec.fields.first(where: { $0.id == key }) {
                 return (sec.id, f.id)
             }
         }
