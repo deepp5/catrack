@@ -95,12 +95,11 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-@app.post("/analyze")
-def analyze(req: AnalyzeRequest):
+def run_inspection_logic(user_text: str, current_checklist_state: Dict[str, Status], images: Optional[List[str]] = None):
     canonical_keys = get_flat_checklist_keys()
 
     # Validate incoming checklist keys against canonical checklist
-    for key in req.current_checklist_state.keys():
+    for key in current_checklist_state.keys():
         if key not in canonical_keys:
             return {
                 "error": f"Invalid checklist item: {key}"
@@ -108,7 +107,6 @@ def analyze(req: AnalyzeRequest):
 
     allowed_items = canonical_keys
 
-    # Build base instruction text
     instruction_text = f"""
     You are an AI inspection assistant for Caterpillar heavy equipment.
 
@@ -157,19 +155,18 @@ def analyze(req: AnalyzeRequest):
     }}
 
     User message:
-    {req.user_text}
+    {user_text}
 
     Current checklist state:
-    {req.current_checklist_state}
+    {current_checklist_state}
     """
 
-    # If images are provided, use multimodal input
-    if req.images and len(req.images) > 0:
+    if images and len(images) > 0:
         content_blocks = [
             {"type": "input_text", "text": instruction_text}
         ]
 
-        for img in req.images:
+        for img in images:
             content_blocks.append(
                 {
                     "type": "input_image",
@@ -187,13 +184,20 @@ def analyze(req: AnalyzeRequest):
             ]
         )
     else:
-        # Text-only request
         response = client.responses.create(
             model="gpt-4.1-mini",
             input=instruction_text
         )
 
     return json.loads(response.output_text)
+
+@app.post("/analyze")
+def analyze(req: AnalyzeRequest):
+    return run_inspection_logic(
+        req.user_text,
+        req.current_checklist_state,
+        req.images
+    )
 
 @app.get("/")
 def root():
