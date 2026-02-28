@@ -11,8 +11,12 @@ class APIService {
         self.baseURL = baseURL
     }
 
-    func analyze(message: String, machineId: UUID, media: [AttachedMedia]) async throws -> AnalyzeResponse {
-        guard let url = URL(string: "\(baseURL)/inspect") else {
+    func analyzeFastAPI(inspectionId: String,
+                        userText: String,
+                        currentChecklistState: [String: String],
+                        imagesBase64: [String]?) async throws -> FastAnalyzeResponse {
+
+        guard let url = URL(string: "\(baseURL)/analyze") else {
             throw URLError(.badURL)
         }
 
@@ -20,57 +24,29 @@ class APIService {
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
 
-        let body: [String: Any] = [
-            "message": message,
-            "machine_id": machineId.uuidString,
-            "media_ids": media.compactMap { $0.remoteId }
-        ]
-        request.httpBody = try JSONSerialization.data(withJSONObject: body)
+        let payload = FastAnalyzeRequest(
+            inspectionId: inspectionId,
+            userText: userText,
+            currentChecklistState: currentChecklistState,
+            images: imagesBase64
+        )
+
+        let encoder = JSONEncoder()
+        encoder.keyEncodingStrategy = .convertToSnakeCase
+        request.httpBody = try encoder.encode(payload)
 
         let (data, response) = try await URLSession.shared.data(for: request)
 
-        guard let httpResponse = response as? HTTPURLResponse,
-              (200...299).contains(httpResponse.statusCode) else {
-            throw URLError(.badServerResponse)
+        guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) else {
+            let msg = String(data: data, encoding: .utf8) ?? "Bad server response"
+            throw NSError(domain: "APIService", code: (response as? HTTPURLResponse)?.statusCode ?? -1,
+                          userInfo: [NSLocalizedDescriptionKey: msg])
         }
 
         let decoder = JSONDecoder()
         decoder.keyDecodingStrategy = .convertFromSnakeCase
-        return try decoder.decode(AnalyzeResponse.self, from: data)
+        return try decoder.decode(FastAnalyzeResponse.self, from: data)
     }
-
-    func analyzeFastAPI(userText: String,
-                    currentChecklistState: [String: String],
-                    imagesBase64: [String]?) async throws -> FastAnalyzeResponse {
-
-    guard let url = URL(string: "\(baseURL)/analyze") else {
-        throw URLError(.badURL)
-    }
-
-    var request = URLRequest(url: url)
-    request.httpMethod = "POST"
-    request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-
-    let payload = FastAnalyzeRequest(
-        userText: userText,
-        currentChecklistState: currentChecklistState,
-        images: imagesBase64
-    )
-
-    request.httpBody = try JSONEncoder().encode(payload)
-
-    let (data, response) = try await URLSession.shared.data(for: request)
-
-    guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) else {
-        let msg = String(data: data, encoding: .utf8) ?? "Bad server response"
-        throw NSError(domain: "APIService", code: (response as? HTTPURLResponse)?.statusCode ?? -1,
-                      userInfo: [NSLocalizedDescriptionKey: msg])
-    }
-
-    let decoder = JSONDecoder()
-    decoder.keyDecodingStrategy = .convertFromSnakeCase
-    return try decoder.decode(FastAnalyzeResponse.self, from: data)
-}
 
     func uploadMedia(localURL: URL, machineId: UUID) async throws -> String {
         guard let url = URL(string: "\(baseURL)/upload") else {
@@ -84,8 +60,7 @@ class APIService {
 
         let fileData = try Data(contentsOf: localURL)
         var body = Data()
-        let boundaryPrefix = "--\(boundary)\r\n"
-        body.append(contentsOf: boundaryPrefix.utf8)
+        body.append(contentsOf: "--\(boundary)\r\n".utf8)
         body.append(contentsOf: "Content-Disposition: form-data; name=\"file\"; filename=\"\(localURL.lastPathComponent)\"\r\n".utf8)
         body.append(contentsOf: "Content-Type: application/octet-stream\r\n\r\n".utf8)
         body.append(fileData)
@@ -100,8 +75,7 @@ class APIService {
         let decoded = try decoder.decode(UploadResponse.self, from: data)
         return decoded.mediaId
     }
-    
-    
+
     func uploadVoiceNote(localURL: URL) async throws -> String {
         guard let url = URL(string: "\(baseURL)/interpret-audio") else {
             throw URLError(.badURL)

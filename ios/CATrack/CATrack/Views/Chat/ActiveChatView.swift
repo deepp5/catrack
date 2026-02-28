@@ -71,7 +71,19 @@ struct ActiveChatView: View {
         .sheet(isPresented: $showCamera) {
             CameraPickerView { image in
                 guard let data = image.jpegData(compressionQuality: 0.8) else { return }
-                let media = AttachedMedia(type: .image, filename: "photo.jpg", thumbnailData: data)
+
+                // Save to temp file so uploadMedia has a localURL to read
+                let filename = "photo_\(Date().timeIntervalSince1970).jpg"
+                let tempURL = FileManager.default.temporaryDirectory
+                    .appendingPathComponent(filename)
+                try? data.write(to: tempURL)
+
+                let media = AttachedMedia(
+                    type: .image,
+                    filename: filename,
+                    localURL: tempURL,        // ← this is what uploadMedia needs
+                    thumbnailData: data       // ← this is what base64 vision uses
+                )
                 chatVM.attachMedia(media)
             }
         }

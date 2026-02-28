@@ -10,40 +10,12 @@ class ChatViewModel: ObservableObject {
     func messagesFor(_ machineId: UUID) -> [Message] {
         sessions[machineId] ?? []
     }
-//checking for errors on UI
+
     func startSession(for machine: Machine) {
         guard sessions[machine.id] == nil else { return }
         let systemMsg = Message.system("Inspecting \(machine.model) (Serial: \(machine.serial)) at \(machine.site). Hours: \(machine.hours).")
         sessions[machine.id] = [systemMsg]
     }
-
-    // func sendMessage(text: String, machineId: UUID, machine: Machine, sheetVM: InspectionSheetViewModel) async {
-    //     var msgs = sessions[machineId] ?? []
-    //     let media = pendingMedia
-    //     pendingMedia = []
-    //     let userMsg = Message.user(text: text, media: media)
-    //     msgs.append(userMsg)
-    //     sessions[machineId] = msgs
-    //     isLoading = true
-    //     defer { isLoading = false }
-
-    //     do {
-    //         let response = try await APIService.shared.analyze(
-    //             message: text,
-    //             machineId: machineId,
-    //             media: media
-    //         )
-    //         let aiMsg = Message.assistant(
-    //             text: response.assistantMessage,
-    //             findings: response.findings,
-    //             memoryNote: response.memoryNote
-    //         )
-    //         sessions[machineId, default: []].append(aiMsg)
-    //     } catch {
-    //         let errMsg = Message.assistant(text: "Error: \(error.localizedDescription)")
-    //         sessions[machineId, default: []].append(errMsg)
-    //     }
-    // }
 
     func sendMessage(text: String, machineId: UUID, machine: Machine, sheetVM: InspectionSheetViewModel) async {
         var msgs = sessions[machineId] ?? []
@@ -58,7 +30,19 @@ class ChatViewModel: ObservableObject {
         defer { isLoading = false }
 
         do {
-            // 1) Build current_checklist_state using SheetField.label as the key
+            // 1) Upload any image media files first, get back remote IDs
+            var uploadedMedia = media
+            for i in uploadedMedia.indices {
+                guard uploadedMedia[i].type == .image,
+                      let localURL = uploadedMedia[i].localURL else { continue }
+                let remoteId = try await APIService.shared.uploadMedia(
+                    localURL: localURL,
+                    machineId: machineId
+                )
+                uploadedMedia[i].remoteId = remoteId
+            }
+
+            // 2) Build checklist state
             let sections = sheetVM.sectionsFor(machineId)
             var currentChecklistState: [String: String] = [:]
             for section in sections {
@@ -67,62 +51,57 @@ class ChatViewModel: ObservableObject {
                 }
             }
 
-            // 2) Convert attached images to base64 for FastAPI (optional)
-            let imagesBase64: [String] = media.compactMap { m in
+            // 3) Convert images to base64
+            let imagesBase64: [String] = uploadedMedia.compactMap { m in
                 guard m.type == .image else { return nil }
-                guard let data = m.thumbnailData else { return nil } // you stored jpeg bytes here
-                return data.base64EncodedString()
+                if let data = m.thumbnailData { return data.base64EncodedString() }
+                if let url = m.localURL, let data = try? Data(contentsOf: url) {
+                    return data.base64EncodedString()
+                }
+                return nil
             }
 
-            // 3) Call FastAPI /analyze
+            // 4) Call FastAPI /analyze
             let resp = try await APIService.shared.analyzeFastAPI(
+                inspectionId: machineId.uuidString,
                 userText: text,
                 currentChecklistState: currentChecklistState,
                 imagesBase64: imagesBase64.isEmpty ? nil : imagesBase64
             )
 
-            // 4) Convert resp.checklistUpdates -> [SheetUpdate]
+            // 5) Convert checklist updates
             var sheetUpdates: [SheetUpdate] = []
             for (itemLabel, upd) in resp.checklistUpdates {
                 guard let sev = FindingSeverity(rawValue: upd.status) else { continue }
                 guard let hit = findFieldByLabel(itemLabel, in: sections) else { continue }
-
-                sheetUpdates.append(
-                    SheetUpdate(
-                        sheetSection: hit.sectionId,
-                        fieldId: hit.fieldId,
-                        value: sev,
-                        evidenceMediaId: nil
-                    )
-                )
+                sheetUpdates.append(SheetUpdate(
+                    sheetSection: hit.sectionId,
+                    fieldId: hit.fieldId,
+                    value: sev,
+                    evidenceMediaId: uploadedMedia.first(where: { $0.type == .image })?.remoteId
+                ))
             }
 
-            // Apply updates to sheet
             if !sheetUpdates.isEmpty {
                 sheetVM.applyUpdates(sheetUpdates, for: machineId)
             }
 
-            // 5) Build assistant message text
+            // 6) Build assistant response
             var assistantText = resp.answer ?? ""
-
             if assistantText.isEmpty && !sheetUpdates.isEmpty {
                 assistantText = "Updated \(sheetUpdates.count) checklist item(s). Risk: \(resp.riskScore ?? "n/a")."
             }
-
             if assistantText.isEmpty && !resp.followUpQuestions.isEmpty {
                 assistantText = resp.followUpQuestions.joined(separator: "\n")
             }
+            if assistantText.isEmpty { assistantText = "Got it." }
 
-            if assistantText.isEmpty {
-                assistantText = "Got it."
-            }
-
-            let aiMsg = Message.assistant(text: assistantText)
-            sessions[machineId, default: []].append(aiMsg)
+            sessions[machineId, default: []].append(Message.assistant(text: assistantText))
 
         } catch {
-            let errMsg = Message.assistant(text: "Error: \(error.localizedDescription)")
-            sessions[machineId, default: []].append(errMsg)
+            sessions[machineId, default: []].append(
+                Message.assistant(text: "Error: \(error.localizedDescription)")
+            )
         }
     }
 
@@ -146,10 +125,8 @@ class ChatViewModel: ObservableObject {
     func removeMedia(id: String) {
         pendingMedia.removeAll { $0.id == id }
     }
-    
-    
+
     func sendVoiceNote(url: URL, duration: Int, machineId: UUID, machine: Machine, sheetVM: InspectionSheetViewModel) async {
-        // 1. Show voice bubble in chat immediately
         sessions[machineId, default: []].append(
             Message.userVoice(url: url, duration: duration)
         )
@@ -158,10 +135,7 @@ class ChatViewModel: ObservableObject {
         defer { isLoading = false }
 
         do {
-            // 2. Upload audio to backend, get back transcript
             let transcript = try await APIService.shared.uploadVoiceNote(localURL: url)
-
-            // 3. Feed transcript into normal analyze flow so AI responds to what was said
             await sendMessage(
                 text: transcript,
                 machineId: machineId,
@@ -174,7 +148,4 @@ class ChatViewModel: ObservableObject {
             )
         }
     }
-    
-    
-    
 }

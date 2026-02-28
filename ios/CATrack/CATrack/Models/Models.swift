@@ -235,8 +235,9 @@ struct SheetUpdate: Decodable {
 
 // MARK: - FastAPI Analyze Models
 struct FastAnalyzeRequest: Encodable {
+    let inspectionId: String
     let userText: String
-    let currentChecklistState: [String: String] // PASS/MONITOR/FAIL/none
+    let currentChecklistState: [String: String]
     let images: [String]?
 }
 
