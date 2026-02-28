@@ -105,8 +105,10 @@ class APIService {
         return decoded.mediaId
     }
 
-    func uploadVoiceNote(localURL: URL) async throws -> String {
-        guard let url = URL(string: "\(baseURL)/interpret-audio") else {
+    func uploadVoiceNote(localURL: URL,
+                         inspectionId: String) async throws -> FastAnalyzeResponse {
+
+        guard let url = URL(string: "\(baseURL)/voice-analyze") else {
             throw URLError(.badURL)
         }
 
@@ -117,26 +119,33 @@ class APIService {
 
         let fileData = try Data(contentsOf: localURL)
         var body = Data()
+
+        // inspection_id field (REQUIRED by backend)
         body.append(contentsOf: "--\(boundary)\r\n".utf8)
-        body.append(contentsOf: "Content-Disposition: form-data; name=\"file\"; filename=\"voice_note.m4a\"\r\n".utf8)
+        body.append(contentsOf: "Content-Disposition: form-data; name=\"inspection_id\"\r\n\r\n".utf8)
+        body.append(contentsOf: "\(inspectionId)\r\n".utf8)
+
+        // audio_file field (REQUIRED by backend)
+        body.append(contentsOf: "--\(boundary)\r\n".utf8)
+        body.append(contentsOf: "Content-Disposition: form-data; name=\"audio_file\"; filename=\"voice_note.m4a\"\r\n".utf8)
         body.append(contentsOf: "Content-Type: audio/m4a\r\n\r\n".utf8)
         body.append(fileData)
         body.append(contentsOf: "\r\n--\(boundary)--\r\n".utf8)
+
         request.httpBody = body
 
         let (data, response) = try await URLSession.shared.data(for: request)
 
         guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) else {
             let msg = String(data: data, encoding: .utf8) ?? "Bad server response"
-            throw NSError(domain: "APIService", code: (response as? HTTPURLResponse)?.statusCode ?? -1,
+            throw NSError(domain: "APIService",
+                          code: (response as? HTTPURLResponse)?.statusCode ?? -1,
                           userInfo: [NSLocalizedDescriptionKey: msg])
         }
 
-        struct VoiceResponse: Decodable { let transcript: String }
         let decoder = JSONDecoder()
         decoder.keyDecodingStrategy = .convertFromSnakeCase
-        let decoded = try decoder.decode(VoiceResponse.self, from: data)
-        return decoded.transcript
+        return try decoder.decode(FastAnalyzeResponse.self, from: data)
     }
 
     func startInspection(machineModel: String) async throws -> String {

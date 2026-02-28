@@ -411,35 +411,14 @@ async def voice_analyze(
     audio_file: UploadFile = File(...)
 ):
     try:
-        # 1️⃣ Parse checklist JSON sent from frontend
-        # Swagger often pre-fills this field with the literal string "string".
-        if checklist_json is None:
-            raise HTTPException(status_code=400, detail="checklist_json is required and must be valid JSON")
-
-        cleaned = checklist_json.strip()
-        if cleaned == "" or cleaned.lower() == "string":
-            raise HTTPException(
-                status_code=400,
-                detail=(
-                    "checklist_json must be a valid JSON object (you left the default placeholder). "
-                    "Example: {\"Tires, wheels, stem caps, lug nuts\": \"none\", \"Steps and handholds\": \"none\"}"
-                ),
-            )
-
-        try:
-            current_checklist_state = json.loads(cleaned)
-        except json.JSONDecodeError as e:
-            raise HTTPException(
-                status_code=400,
-                detail=(
-                    f"checklist_json is not valid JSON: {e}. "
-                    "Example: {\"Tires, wheels, stem caps, lug nuts\": \"none\", \"Steps and handholds\": \"none\"}"
-                ),
-            )
-
-        if not isinstance(current_checklist_state, dict):
-            raise HTTPException(status_code=400, detail="checklist_json must be a JSON object (dictionary)")
-        #Fetch inspection from DB
+        # Fetch inspection from DB (checklist stored server-side)
+        resp = (
+            supabase.table("inspections")
+            .select("id, checklist_json")
+            .eq("id", inspection_id)
+            .limit(1)
+            .execute()
+        )
         resp = (
             supabase.table("inspections")
             .select("id, checklist_json")

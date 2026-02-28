@@ -146,12 +146,50 @@ class ChatViewModel: ObservableObject {
         defer { isLoading = false }
 
         do {
-            let transcript = try await APIService.shared.uploadVoiceNote(localURL: url)
-            await sendMessage(
-                text: transcript,
-                machineId: machineId,
-                machine: machine,
-                sheetVM: sheetVM
+            guard let inspectionId = activeInspectionIds[machineId] else {
+                sessions[machineId, default: []].append(
+                    Message.assistant(text: "Inspection not started yet.")
+                )
+                return
+            }
+
+            let resp = try await APIService.shared.uploadVoiceNote(
+                localURL: url,
+                inspectionId: inspectionId
+            )
+
+            // Apply checklist updates just like text flow
+            let sections = sheetVM.sectionsFor(machineId)
+            var sheetUpdates: [SheetUpdate] = []
+
+            for (backendKey, upd) in resp.checklistUpdates {
+                guard let sev = FindingSeverity(rawValue: upd.status) else { continue }
+                guard let hit = findFieldByBackendKey(backendKey, in: sections) else { continue }
+                sheetUpdates.append(
+                    SheetUpdate(
+                        sheetSection: hit.sectionId,
+                        fieldId: hit.fieldId,
+                        value: sev,
+                        evidenceMediaId: nil
+                    )
+                )
+            }
+
+            if !sheetUpdates.isEmpty {
+                sheetVM.applyUpdates(sheetUpdates, for: machineId)
+            }
+
+            var assistantText = resp.answer ?? ""
+            if assistantText.isEmpty && !sheetUpdates.isEmpty {
+                assistantText = "Updated \(sheetUpdates.count) checklist item(s). Risk: \(resp.riskScore ?? "n/a")."
+            }
+            if assistantText.isEmpty && !resp.followUpQuestions.isEmpty {
+                assistantText = resp.followUpQuestions.joined(separator: "\n")
+            }
+            if assistantText.isEmpty { assistantText = "Got it." }
+
+            sessions[machineId, default: []].append(
+                Message.assistant(text: assistantText)
             )
         } catch {
             sessions[machineId, default: []].append(
