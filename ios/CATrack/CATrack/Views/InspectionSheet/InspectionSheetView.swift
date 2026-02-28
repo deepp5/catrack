@@ -332,3 +332,6 @@ struct FinalizeBar: View {
         .overlay(Rectangle().frame(height: 0.5).foregroundStyle(Color.appBorder), alignment: .top)
     }
 }
+
+
+//Add commment 
