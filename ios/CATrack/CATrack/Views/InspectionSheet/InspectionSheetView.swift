@@ -89,9 +89,10 @@ struct InspectionSheetView: View {
 
     private func severityRank(_ s: FindingSeverity) -> Int {
         switch s {
-        case .pass:    return 0
-        case .monitor: return 1
-        case .fail:    return 2
+        case .pending: return 0
+        case .pass:    return 1
+        case .monitor: return 2
+        case .fail:    return 3
         }
     }
 
@@ -100,7 +101,7 @@ struct InspectionSheetView: View {
 
         let allFindings = sections.flatMap { section in
             section.fields.compactMap { field -> FindingCard? in
-                guard field.status != .pass else { return nil }
+                guard field.status != .pass, field.status != .pending else { return nil }
                 return FindingCard(
                     componentType: field.label,
                     componentLocation: section.title,
@@ -126,6 +127,7 @@ struct InspectionSheetView: View {
 
         let riskScore: Int
         switch overallStatus {
+        case .pending: riskScore = 50
         case .fail:    riskScore = 55
         case .monitor: riskScore = 75
         case .pass:    riskScore = 95
@@ -149,8 +151,6 @@ struct InspectionSheetView: View {
         archiveStore.add(record)
         machineStore.updateStatus(machineId: machine.id, status: overallStatus)
         sheetVM.resetSheet(for: machine.id)
-
-        // Clear active inspection — removes Chat tab and resets to picker
         machineStore.clearActiveChatMachine()
         machineStore.activeMachineId = nil
     }
@@ -219,13 +219,10 @@ struct SheetFieldCard: View {
                         .font(.system(size: 10))
                         .foregroundStyle(Color.catYellowDim)
                 }
-
                 Text(field.label)
                     .font(.barlow(14))
                     .foregroundStyle(.white)
-
                 Spacer()
-
                 SheetSegmentedControl(selected: field.status) { newStatus in
                     onUpdate(newStatus, noteText)
                 }
@@ -252,9 +249,12 @@ struct SheetSegmentedControl: View {
     let selected: FindingSeverity
     let onSelect: (FindingSeverity) -> Void
 
+    // Only show the 3 actionable states — pending is default only, not user-selectable
+    private let options: [FindingSeverity] = [.pass, .monitor, .fail]
+
     var body: some View {
         HStack(spacing: 4) {
-            ForEach(FindingSeverity.allCases) { severity in
+            ForEach(options) { severity in
                 Button {
                     onSelect(severity)
                 } label: {
@@ -296,40 +296,45 @@ struct FinalizeBar: View {
     let sections: [SheetSection]
     let onFinalize: () -> Void
 
-    var failCount: Int { sections.flatMap { $0.fields }.filter { $0.status == .fail }.count }
-    var monCount: Int { sections.flatMap { $0.fields }.filter { $0.status == .monitor }.count }
+    var failCount: Int    { sections.flatMap { $0.fields }.filter { $0.status == .fail }.count }
+    var monCount: Int     { sections.flatMap { $0.fields }.filter { $0.status == .monitor }.count }
+    var pendingCount: Int { sections.flatMap { $0.fields }.filter { $0.status == .pending }.count }
 
     var body: some View {
         HStack {
-            VStack(alignment: .leading, spacing: 2) {
-                HStack(spacing: 8) {
-                    if failCount > 0 {
-                        Label("\(failCount) FAIL", systemImage: "xmark.circle.fill")
-                            .font(.dmMono(11, weight: .medium))
-                            .foregroundStyle(Color.severityFail)
-                    }
-                    if monCount > 0 {
-                        Label("\(monCount) MON", systemImage: "exclamationmark.circle.fill")
-                            .font(.dmMono(11, weight: .medium))
-                            .foregroundStyle(Color.severityMon)
-                    }
-                    if failCount == 0 && monCount == 0 {
-                        Label("All Clear", systemImage: "checkmark.circle.fill")
-                            .font(.dmMono(11, weight: .medium))
-                            .foregroundStyle(Color.severityPass)
-                    }
+            HStack(spacing: 8) {
+                if failCount > 0 {
+                    Label("\(failCount) FAIL", systemImage: "xmark.circle.fill")
+                        .font(.dmMono(11, weight: .medium))
+                        .foregroundStyle(Color.severityFail)
+                }
+                if monCount > 0 {
+                    Label("\(monCount) MON", systemImage: "exclamationmark.circle.fill")
+                        .font(.dmMono(11, weight: .medium))
+                        .foregroundStyle(Color.severityMon)
+                }
+                if pendingCount > 0 {
+                    Label("\(pendingCount) remaining", systemImage: "circle.dotted")
+                        .font(.dmMono(11, weight: .medium))
+                        .foregroundStyle(Color.appMuted)
+                }
+                if failCount == 0 && monCount == 0 && pendingCount == 0 {
+                    Label("All Clear", systemImage: "checkmark.circle.fill")
+                        .font(.dmMono(11, weight: .medium))
+                        .foregroundStyle(Color.severityPass)
                 }
             }
             Spacer()
             Button(action: onFinalize) {
                 Text("FINALIZE")
                     .font(.dmMono(13, weight: .medium))
-                    .foregroundStyle(.black)
+                    .foregroundStyle(pendingCount == 0 ? .black : Color.appMuted)
                     .padding(.horizontal, 20)
                     .padding(.vertical, 10)
-                    .background(Color.catYellow)
+                    .background(pendingCount == 0 ? Color.catYellow : Color.appPanel)
                     .clipShape(RoundedRectangle(cornerRadius: K.cornerRadius))
             }
+            .disabled(pendingCount > 0)
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 12)

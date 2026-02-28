@@ -5,31 +5,31 @@ extension SheetSection {
     static func defaultSections() -> [SheetSection] {
         [
             SheetSection(id: "engine", title: "Engine & Drivetrain", fields: [
-                SheetField(id: "engine_oil", label: "Engine Oil Level", status: .pass, note: "", aiPrefilled: false),
-                SheetField(id: "coolant", label: "Coolant Level", status: .pass, note: "", aiPrefilled: false),
-                SheetField(id: "belts", label: "Belts & Hoses", status: .pass, note: "", aiPrefilled: false),
-                SheetField(id: "air_filter", label: "Air Filter", status: .pass, note: "", aiPrefilled: false),
-                SheetField(id: "fuel_system", label: "Fuel System", status: .pass, note: "", aiPrefilled: false),
+                SheetField(id: "engine_oil", label: "Engine Oil Level", status: .pending, note: "", aiPrefilled: false),
+                SheetField(id: "coolant", label: "Coolant Level", status: .pending, note: "", aiPrefilled: false),
+                SheetField(id: "belts", label: "Belts & Hoses", status: .pending, note: "", aiPrefilled: false),
+                SheetField(id: "air_filter", label: "Air Filter", status: .pending, note: "", aiPrefilled: false),
+                SheetField(id: "fuel_system", label: "Fuel System", status: .pending, note: "", aiPrefilled: false),
             ]),
             SheetSection(id: "hydraulics", title: "Hydraulics", fields: [
-                SheetField(id: "hyd_level", label: "Hydraulic Fluid Level", status: .pass, note: "", aiPrefilled: false),
-                SheetField(id: "hyd_hoses", label: "Hydraulic Hoses & Fittings", status: .pass, note: "", aiPrefilled: false),
-                SheetField(id: "hyd_cylinders", label: "Cylinders & Seals", status: .pass, note: "", aiPrefilled: false),
+                SheetField(id: "hyd_level", label: "Hydraulic Fluid Level", status: .pending, note: "", aiPrefilled: false),
+                SheetField(id: "hyd_hoses", label: "Hydraulic Hoses & Fittings", status: .pending, note: "", aiPrefilled: false),
+                SheetField(id: "hyd_cylinders", label: "Cylinders & Seals", status: .pending, note: "", aiPrefilled: false),
             ]),
             SheetSection(id: "undercarriage", title: "Undercarriage", fields: [
-                SheetField(id: "tracks", label: "Track Tension & Wear", status: .pass, note: "", aiPrefilled: false),
-                SheetField(id: "rollers", label: "Rollers & Idlers", status: .pass, note: "", aiPrefilled: false),
-                SheetField(id: "sprockets", label: "Sprockets", status: .pass, note: "", aiPrefilled: false),
+                SheetField(id: "tracks", label: "Track Tension & Wear", status: .pending, note: "", aiPrefilled: false),
+                SheetField(id: "rollers", label: "Rollers & Idlers", status: .pending, note: "", aiPrefilled: false),
+                SheetField(id: "sprockets", label: "Sprockets", status: .pending, note: "", aiPrefilled: false),
             ]),
             SheetSection(id: "electrical", title: "Electrical", fields: [
-                SheetField(id: "battery", label: "Battery Condition", status: .pass, note: "", aiPrefilled: false),
-                SheetField(id: "lights", label: "Lights & Signals", status: .pass, note: "", aiPrefilled: false),
-                SheetField(id: "gauges", label: "Gauges & Instruments", status: .pass, note: "", aiPrefilled: false),
+                SheetField(id: "battery", label: "Battery Condition", status: .pending, note: "", aiPrefilled: false),
+                SheetField(id: "lights", label: "Lights & Signals", status: .pending, note: "", aiPrefilled: false),
+                SheetField(id: "gauges", label: "Gauges & Instruments", status: .pending, note: "", aiPrefilled: false),
             ]),
             SheetSection(id: "safety", title: "Safety", fields: [
-                SheetField(id: "fire_ext", label: "Fire Extinguisher", status: .pass, note: "", aiPrefilled: false),
-                SheetField(id: "seatbelt", label: "Seatbelt & ROPS", status: .pass, note: "", aiPrefilled: false),
-                SheetField(id: "horn", label: "Horn & Backup Alarm", status: .pass, note: "", aiPrefilled: false),
+                SheetField(id: "fire_ext", label: "Fire Extinguisher", status: .pending, note: "", aiPrefilled: false),
+                SheetField(id: "seatbelt", label: "Seatbelt & ROPS", status: .pending, note: "", aiPrefilled: false),
+                SheetField(id: "horn", label: "Horn & Backup Alarm", status: .pending, note: "", aiPrefilled: false),
             ]),
         ]
     }
