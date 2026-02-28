@@ -75,8 +75,12 @@ struct ActiveChatView: View {
             }
         }
         .sheet(isPresented: $showVoice) {
-            VoiceRecorderView { url in
-                let media = AttachedMedia(type: .audio, filename: url.lastPathComponent, localURL: url)
+            VoiceRecorderView { url, _ in
+                let media = AttachedMedia(
+                    type: .audio,
+                    filename: url.lastPathComponent,
+                    localURL: url
+                )
                 chatVM.attachMedia(media)
             }
         }
