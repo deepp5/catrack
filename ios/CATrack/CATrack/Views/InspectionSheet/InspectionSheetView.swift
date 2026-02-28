@@ -87,8 +87,17 @@ struct InspectionSheetView: View {
         }
     }
 
+    private func severityRank(_ s: FindingSeverity) -> Int {
+        switch s {
+        case .pass:    return 0
+        case .monitor: return 1
+        case .fail:    return 2
+        }
+    }
+
     private func finalizeInspection() {
         guard let machine = machine else { return }
+
         let allFindings = sections.flatMap { section in
             section.fields.compactMap { field -> FindingCard? in
                 guard field.status != .pass else { return nil }
@@ -111,10 +120,16 @@ struct InspectionSheetView: View {
                 )
             }
         }
-        let overallStatus = sections.map { $0.overallStatus }.max {
-            ($0 == .pass ? 0 : $0 == .monitor ? 1 : 2) < ($1 == .pass ? 0 : $1 == .monitor ? 1 : 2)
-        } ?? .pass
-        let riskScore = overallStatus == .fail ? 55 : overallStatus == .monitor ? 75 : 95
+
+        let allStatuses = sections.map { $0.overallStatus }
+        let overallStatus = allStatuses.max(by: { severityRank($0) < severityRank($1) }) ?? .pass
+
+        let riskScore: Int
+        switch overallStatus {
+        case .fail:    riskScore = 55
+        case .monitor: riskScore = 75
+        case .pass:    riskScore = 95
+        }
 
         let record = ArchiveRecord(
             machine: machine.model,
