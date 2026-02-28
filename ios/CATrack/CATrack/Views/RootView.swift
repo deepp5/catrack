@@ -30,7 +30,9 @@ struct RootView: View {
     @EnvironmentObject var chatVM: ChatViewModel
 
     @State private var selectedTab: AppTab = .newInspection
-    @State private var showChat: Bool = false  // active chat tab visible
+    @State private var showChat: Bool = false
+
+    var hasActiveInspection: Bool { machineStore.activeChatMachine != nil }
 
     var body: some View {
         ZStack(alignment: .bottom) {
@@ -56,7 +58,7 @@ struct RootView: View {
                             sheetVM.initSheet(for: machine.id)
                             chatVM.startSession(for: machine)
                             machineStore.setActiveChatMachine(machine)
-                            showChat = true  // switch to chat tab
+                            showChat = true
                         }
                     case .sheet:
                         InspectionSheetView()
@@ -74,15 +76,9 @@ struct RootView: View {
             HStack(spacing: 0) {
                 // Plus / Inspect button
                 Button {
-                    if machineStore.activeChatMachine != nil {
-                        // Already in inspection — confirm reset or just go to picker
-                        machineStore.clearActiveChatMachine()
-                        showChat = false
-                        selectedTab = .newInspection
-                    } else {
-                        showChat = false
-                        selectedTab = .newInspection
-                    }
+                    machineStore.clearActiveChatMachine()
+                    showChat = false
+                    selectedTab = .newInspection
                 } label: {
                     VStack(spacing: 4) {
                         Image(systemName: "plus.circle.fill")
@@ -97,14 +93,33 @@ struct RootView: View {
                 }
                 .buttonStyle(.plain)
 
-                // Sheet tab
-                NavTabButton(tab: .sheet, isSelected: !showChat && selectedTab == .sheet) {
+                // Sheet tab — dimmed when no active inspection
+                Button {
+                    guard hasActiveInspection else { return }
                     showChat = false
                     selectedTab = .sheet
+                } label: {
+                    VStack(spacing: 4) {
+                        Image(systemName: "checklist")
+                            .font(.system(size: 22, weight: !showChat && selectedTab == .sheet ? .semibold : .regular))
+                            .foregroundStyle(
+                                !showChat && selectedTab == .sheet ? Color.catYellow :
+                                hasActiveInspection ? Color.appMuted : Color.appMuted.opacity(0.4)
+                            )
+                        Text("Sheet")
+                            .font(.barlow(10, weight: !showChat && selectedTab == .sheet ? .semibold : .regular))
+                            .foregroundStyle(
+                                !showChat && selectedTab == .sheet ? Color.catYellow :
+                                hasActiveInspection ? Color.appMuted : Color.appMuted.opacity(0.4)
+                            )
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.top, 10)
                 }
+                .buttonStyle(.plain)
 
                 // Dynamic Chat tab — only shows when inspection is active
-                if machineStore.activeChatMachine != nil {
+                if hasActiveInspection {
                     Button {
                         showChat = true
                     } label: {
@@ -174,7 +189,6 @@ struct NavTabButton: View {
         .buttonStyle(.plain)
     }
 }
-
 
 // MARK: - InspectionPickerView
 struct InspectionPickerView: View {

@@ -3,6 +3,7 @@ import SwiftUI
 
 // MARK: - Finding Severity
 enum FindingSeverity: String, Codable, CaseIterable, Identifiable {
+    case pending = "PENDING"
     case pass    = "PASS"
     case monitor = "MONITOR"
     case fail    = "FAIL"
@@ -10,6 +11,7 @@ enum FindingSeverity: String, Codable, CaseIterable, Identifiable {
 
     var color: Color {
         switch self {
+        case .pending: return .appMuted
         case .pass:    return .severityPass
         case .monitor: return .severityMon
         case .fail:    return .severityFail
@@ -17,6 +19,7 @@ enum FindingSeverity: String, Codable, CaseIterable, Identifiable {
     }
     var shortLabel: String {
         switch self {
+        case .pending: return "—"
         case .pass:    return "PASS"
         case .monitor: return "MON"
         case .fail:    return "FAIL"
@@ -123,7 +126,7 @@ struct Message: Identifiable, Codable {
     var findings: [FindingCard] = []
     var memoryNote: String?
     var createdAt: Date = Date()
-    var voiceNoteURL: URL?        // ← ADD THIS
+    var voiceNoteURL: URL?
     var voiceNoteDuration: Int?
 
     static func system(_ text: String) -> Message {
@@ -135,7 +138,6 @@ struct Message: Identifiable, Codable {
     static func assistant(text: String, findings: [FindingCard] = [], memoryNote: String? = nil) -> Message {
         Message(role: .assistant, text: text, findings: findings, memoryNote: memoryNote)
     }
-    
     static func userVoice(url: URL, duration: Int) -> Message {
         Message(role: .user, text: "", voiceNoteURL: url, voiceNoteDuration: duration)
     }
@@ -156,9 +158,17 @@ struct SheetSection: Identifiable, Codable {
     var title: String
     var fields: [SheetField]
 
+    // ← FIXED: added .pending check
     var overallStatus: FindingSeverity {
-        if fields.contains(where: { $0.status == .fail })    { return .fail }
-        if fields.contains(where: { $0.status == .monitor }) { return .monitor }
+        if fields.contains(where: { $0.status == .fail }) {
+            return .fail
+        }
+        if fields.contains(where: { $0.status == .monitor }) {
+            return .monitor
+        }
+        if fields.contains(where: { $0.status == .pending }) {
+            return .pending
+        }
         return .pass
     }
 }
@@ -232,7 +242,6 @@ struct SheetUpdate: Decodable {
     var evidenceMediaId: String?
 }
 
-
 // MARK: - FastAPI Analyze Models
 struct FastAnalyzeRequest: Encodable {
     let inspectionId: String
@@ -241,7 +250,7 @@ struct FastAnalyzeRequest: Encodable {
 }
 
 struct FastChecklistUpdate: Decodable {
-    let status: String // PASS/MONITOR/FAIL
+    let status: String
     let note: String?
 }
 

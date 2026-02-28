@@ -64,6 +64,7 @@ struct ActiveChatView: View {
                 .focused($inputFocused)
             }
         }
+        .ignoresSafeArea(.keyboard, edges: .bottom) // ← KEY FIX
         .navigationTitle(machine.model)
         .navigationBarTitleDisplayMode(.inline)
         .tint(.catYellow)
