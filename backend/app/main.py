@@ -37,98 +37,138 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# @app.post("/analyze")
+# def analyze(req: AnalyzeRequest):
+#     response = client.responses.create(
+#         model="gpt-4.1-mini",
+#         input=[
+#             {
+#                 "role": "system",
+#                 "content": """
+#                 You are an AI inspection assistant for Caterpillar heavy equipment.
+
+#                 You must:
+#                 1. Classify the message as either:
+#                 - inspection_update
+#                 - knowledge_question
+
+#                 2. If inspection_update:
+#                 - Choose checklist items ONLY from the provided checklist keys.
+#                 - Assign status: PASS, MONITOR, or FAIL.
+#                 - Provide a short note.
+#                 - Estimate risk level: Low, Moderate, High.
+
+#                 3. If knowledge_question:
+#                 - Do NOT modify checklist.
+#                 - Provide clear safety or operational guidance.
+#                 - Do NOT assign risk.
+
+#                 Return ONLY valid JSON.
+#                 Do not include explanations.
+#                 """
+#                             },
+#                             {
+#                                 "role": "user",
+#                                 "content": f"""
+#                 User message:
+#                 {req.user_text}
+
+#                 Current checklist state:
+#                 {req.current_checklist_state}
+#                 """
+#             }
+#         ],
+#         response_format={
+#             "type": "json_schema",
+#             "json_schema": {
+#                 "name": "inspection_response",
+#                 "schema": {
+#                     "type": "object",
+#                     "properties": {
+#                         "intent": {
+#                             "type": "string",
+#                             "enum": ["inspection_update", "knowledge_question"]
+#                         },
+#                         "checklist_updates": {
+#                             "type": "object",
+#                             "additionalProperties": {
+#                                 "type": "object",
+#                                 "properties": {
+#                                     "status": {
+#                                         "type": "string",
+#                                         "enum": ["PASS", "MONITOR", "FAIL"]
+#                                     },
+#                                     "note": {"type": "string"}
+#                                 },
+#                                 "required": ["status", "note"]
+#                             }
+#                         },
+#                         "risk_score": {
+#                             "type": ["string", "null"],
+#                             "enum": ["Low", "Moderate", "High", None]
+#                         },
+#                         "answer": {
+#                             "type": ["string", "null"]
+#                         },
+#                         "follow_up_questions": {
+#                             "type": "array",
+#                             "items": {"type": "string"}
+#                         }
+#                     },
+#                     "required": [
+#                         "intent",
+#                         "checklist_updates",
+#                         "risk_score",
+#                         "answer",
+#                         "follow_up_questions"
+#                     ]
+#                 }
+#             }
+#         }
+#     )
+
+#     return json.loads(response.output[0].content[0].text)
+
 @app.post("/analyze")
 def analyze(req: AnalyzeRequest):
+
     response = client.responses.create(
         model="gpt-4.1-mini",
-        input=[
-            {
-                "role": "system",
-                "content": """
-                You are an AI inspection assistant for Caterpillar heavy equipment.
+        input=f"""
+        You are an AI inspection assistant for Caterpillar heavy equipment.
 
-                You must:
-                1. Classify the message as either:
-                - inspection_update
-                - knowledge_question
+        Classify the user message as:
+        - inspection_update
+        - knowledge_question
 
-                2. If inspection_update:
-                - Choose checklist items ONLY from the provided checklist keys.
-                - Assign status: PASS, MONITOR, or FAIL.
-                - Provide a short note.
-                - Estimate risk level: Low, Moderate, High.
+        If inspection_update:
+        - Update checklist items only from provided checklist keys
+        - Assign PASS, MONITOR, or FAIL
+        - Provide short note
+        - Assign risk: Low, Moderate, High
 
-                3. If knowledge_question:
-                - Do NOT modify checklist.
-                - Provide clear safety or operational guidance.
-                - Do NOT assign risk.
+        If knowledge_question:
+        - Do not modify checklist
+        - Provide clear guidance
 
-                Return ONLY valid JSON.
-                Do not include explanations.
-                """
-                            },
-                            {
-                                "role": "user",
-                                "content": f"""
-                User message:
-                {req.user_text}
+        Return ONLY valid JSON in this exact format:
+        {{
+        "intent": "...",
+        "checklist_updates": {{...}},
+        "risk_score": "... or null",
+        "answer": "... or null",
+        "follow_up_questions": [...]
+        }}
 
-                Current checklist state:
-                {req.current_checklist_state}
-                """
-            }
-        ],
-        response_format={
-            "type": "json_schema",
-            "json_schema": {
-                "name": "inspection_response",
-                "schema": {
-                    "type": "object",
-                    "properties": {
-                        "intent": {
-                            "type": "string",
-                            "enum": ["inspection_update", "knowledge_question"]
-                        },
-                        "checklist_updates": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "object",
-                                "properties": {
-                                    "status": {
-                                        "type": "string",
-                                        "enum": ["PASS", "MONITOR", "FAIL"]
-                                    },
-                                    "note": {"type": "string"}
-                                },
-                                "required": ["status", "note"]
-                            }
-                        },
-                        "risk_score": {
-                            "type": ["string", "null"],
-                            "enum": ["Low", "Moderate", "High", None]
-                        },
-                        "answer": {
-                            "type": ["string", "null"]
-                        },
-                        "follow_up_questions": {
-                            "type": "array",
-                            "items": {"type": "string"}
-                        }
-                    },
-                    "required": [
-                        "intent",
-                        "checklist_updates",
-                        "risk_score",
-                        "answer",
-                        "follow_up_questions"
-                    ]
-                }
-            }
-        }
+        User message:
+        {req.user_text}
+
+        Current checklist state:
+        {req.current_checklist_state}
+        """
     )
 
-    return json.loads(response.output[0].content[0].text)
-
+    return json.loads(response.output_text)
 
 @app.get("/")
 def root():
