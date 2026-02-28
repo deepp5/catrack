@@ -108,6 +108,19 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+@app.post("/start-inspection")
+def start_inspection(machine_model: str):
+    initial_state = {}
+    for section in FULL_CHECKLIST.values():
+        initial_state.update(section)
+
+    resp = supabase.table("inspections").insert({
+        "machine_model": machine_model,
+        "checklist_json": initial_state
+    }).execute()
+
+    return resp.data[0]
+
 def run_inspection_logic(user_text: str, current_checklist_state: Dict[str, Status], images: Optional[List[str]] = None):
     canonical_keys = get_flat_checklist_keys()
 
