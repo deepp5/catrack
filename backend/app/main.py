@@ -18,12 +18,70 @@ class ChecklistUpdate(BaseModel):
     status: Literal["PASS", "MONITOR", "FAIL"]
     note: Optional[str] = None
 
+
 class AnalyzeResponse(BaseModel):
     intent: Literal["inspection_update", "knowledge_question", "unclear_input"]
     checklist_updates: Dict[str, ChecklistUpdate]
     risk_score: Optional[Literal["Low", "Moderate", "High"]] = None
     answer: Optional[str] = None
     follow_up_questions: List[str]
+
+# FULL_CHECKLIST constant
+FULL_CHECKLIST = {
+    "FROM_THE_GROUND": {
+        "Tires, wheels, stem caps, lug nuts": "none",
+        "Bucket cutting edge, moldboard": "none",
+        "Bucket lift and tilt cylinders, hoses": "none",
+        "Loader frame, arms": "none",
+        "Underneath machine": "none",
+        "Transmission, transfer case": "none",
+        "Steps and handholds": "none",
+        "Fuel tank": "none",
+        "Differential and final drive oil": "none",
+        "Air tank": "none",
+        "Axles, final drives, differentials, brakes": "none",
+        "Hydraulic tank": "none",
+        "Transmission oil": "none",
+        "Lights, front and rear": "none",
+        "Battery compartment": "none",
+        "Diesel exhaust fluid tank": "none",
+        "Overall machine": "none"
+    },
+    "ENGINE_COMPARTMENT": {
+        "Engine oil": "none",
+        "Engine coolant": "none",
+        "Radiator": "none",
+        "All hoses and lines": "none",
+        "Fuel filters / water separator": "none",
+        "All belts": "none",
+        "Air filter": "none",
+        "Overall engine compartment": "none"
+    },
+    "OUTSIDE_CAB": {
+        "Handholds": "none",
+        "ROPS": "none",
+        "Fire extinguisher": "none",
+        "Windshield and windows": "none",
+        "Windshield wipers / washers": "none",
+        "Doors": "none"
+    },
+    "INSIDE_CAB": {
+        "Seat": "none",
+        "Seat belt and mounting": "none",
+        "Horn, backup alarm, lights": "none",
+        "Mirrors": "none",
+        "Cab air filter": "none",
+        "Gauges, indicators, switches, controls": "none",
+        "Overall cab interior": "none"
+    }
+}
+
+# Helper to flatten keys
+def get_flat_checklist_keys():
+    keys = []
+    for section in FULL_CHECKLIST.values():
+        keys.extend(section.keys())
+    return keys
 
 app = FastAPI()
 load_dotenv()
@@ -39,7 +97,16 @@ app.add_middleware(
 
 @app.post("/analyze")
 def analyze(req: AnalyzeRequest):
-    allowed_items = list(req.current_checklist_state.keys())
+    canonical_keys = get_flat_checklist_keys()
+
+    # Validate incoming checklist keys against canonical checklist
+    for key in req.current_checklist_state.keys():
+        if key not in canonical_keys:
+            return {
+                "error": f"Invalid checklist item: {key}"
+            }
+
+    allowed_items = canonical_keys
 
     # Build base instruction text
     instruction_text = f"""
@@ -130,8 +197,4 @@ def analyze(req: AnalyzeRequest):
 
 @app.get("/")
 def root():
-    return {"message": "CATrack backend running 🚜"}
-
-@app.get("/ping")
-def ping():
-    return {"status": "Backend connected successfully"}
+    return {"message": "CATrack backend running"}
