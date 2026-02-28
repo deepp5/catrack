@@ -39,7 +39,6 @@ app.add_middleware(
 
 @app.post("/analyze")
 def analyze(req: AnalyzeRequest):
-
     response = client.responses.create(
         model="gpt-4.1-mini",
         input=[
