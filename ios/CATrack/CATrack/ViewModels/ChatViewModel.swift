@@ -10,7 +10,7 @@ class ChatViewModel: ObservableObject {
     func messagesFor(_ machineId: UUID) -> [Message] {
         sessions[machineId] ?? []
     }
-
+//checking for errors on UI
     func startSession(for machine: Machine) {
         guard sessions[machine.id] == nil else { return }
         let systemMsg = Message.system("Inspecting \(machine.model) (Serial: \(machine.serial)) at \(machine.site). Hours: \(machine.hours).")
