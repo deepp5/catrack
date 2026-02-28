@@ -44,7 +44,6 @@ class APIService {
 
     func analyzeFastAPI(inspectionId: String,
                         userText: String,
-                        currentChecklistState: [String: String],
                         imagesBase64: [String]?) async throws -> FastAnalyzeResponse {
 
         guard let url = URL(string: "\(baseURL)/analyze") else {
@@ -58,7 +57,6 @@ class APIService {
         let payload = FastAnalyzeRequest(
             inspectionId: inspectionId,
             userText: userText,
-            currentChecklistState: currentChecklistState,
             images: imagesBase64
         )
 
@@ -139,5 +137,31 @@ class APIService {
         decoder.keyDecodingStrategy = .convertFromSnakeCase
         let decoded = try decoder.decode(VoiceResponse.self, from: data)
         return decoded.transcript
+    }
+
+    func startInspection(machineModel: String) async throws -> String {
+        guard let url = URL(string: "\(baseURL)/start-inspection?machine_model=\(machineModel)") else {
+            throw URLError(.badURL)
+        }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+
+        guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) else {
+            let msg = String(data: data, encoding: .utf8) ?? "Bad server response"
+            throw NSError(domain: "APIService",
+                          code: (response as? HTTPURLResponse)?.statusCode ?? -1,
+                          userInfo: [NSLocalizedDescriptionKey: msg])
+        }
+
+        struct StartResponse: Decodable {
+            let id: String
+        }
+
+        let decoder = JSONDecoder()
+        let decoded = try decoder.decode(StartResponse.self, from: data)
+        return decoded.id
     }
 }

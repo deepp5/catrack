@@ -237,7 +237,6 @@ struct SheetUpdate: Decodable {
 struct FastAnalyzeRequest: Encodable {
     let inspectionId: String
     let userText: String
-    let currentChecklistState: [String: String]
     let images: [String]?
 }
 

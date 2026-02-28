@@ -6,6 +6,7 @@ class ChatViewModel: ObservableObject {
     @Published var sessions: [UUID: [Message]] = [:]
     @Published var isLoading: Bool = false
     @Published var pendingMedia: [AttachedMedia] = []
+    @Published var activeInspectionIds: [UUID: String] = [:]
 
     func messagesFor(_ machineId: UUID) -> [Message] {
         sessions[machineId] ?? []
@@ -15,6 +16,15 @@ class ChatViewModel: ObservableObject {
         guard sessions[machine.id] == nil else { return }
         let systemMsg = Message.system("Inspecting \(machine.model) (Serial: \(machine.serial)) at \(machine.site). Hours: \(machine.hours).")
         sessions[machine.id] = [systemMsg]
+
+        Task {
+            do {
+                let inspectionId = try await APIService.shared.startInspection(machineModel: machine.model)
+                activeInspectionIds[machine.id] = inspectionId
+            } catch {
+                print("Failed to start inspection:", error)
+            }
+        }
     }
 
     func sendMessage(text: String, machineId: UUID, machine: Machine, sheetVM: InspectionSheetViewModel) async {
@@ -63,9 +73,8 @@ class ChatViewModel: ObservableObject {
 
             // 4) Call FastAPI /analyze
             let resp = try await APIService.shared.analyzeFastAPI(
-                inspectionId: machineId.uuidString,
+                inspectionId: activeInspectionIds[machineId] ?? "",
                 userText: text,
-                currentChecklistState: currentChecklistState,
                 imagesBase64: imagesBase64.isEmpty ? nil : imagesBase64
             )
 
