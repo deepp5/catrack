@@ -6,6 +6,9 @@ import os
 import json
 import io
 import requests
+import numpy as np
+import librosa
+import tempfile
 from openai import OpenAI
 from dotenv import load_dotenv
 from supabase import create_client
@@ -275,12 +278,13 @@ def debug_download(media_id: str):
 
 @app.post("/process-next-audio")
 def process_next_audio():
-    # 1) Pick the next uploaded audio
+    # 1) Pick the next uploaded audio (voice note only)
     resp = (
         supabase.table("media")
         .select("id,bucket,path,status,type,created_at")
         .eq("type", "audio")
         .eq("status", "uploaded")
+        .eq("category", "inspection_voice")
         .order("created_at", desc=False)
         .limit(1)
         .execute()
@@ -341,3 +345,202 @@ def process_next_audio():
             {"status": "failed", "error_message": str(e)}
         ).eq("id", media_id).execute()
         raise HTTPException(status_code=500, detail=f"processing failed: {e}")
+
+
+# -----------------------------
+# Machine Sound Health (GOOD/BAD)
+# -----------------------------
+
+def _download_media_bytes(media_id: str) -> tuple[dict, bytes]:
+    """Load a media row and download its bytes from Supabase public storage."""
+    row_resp = (
+        supabase.table("media")
+        .select("id,bucket,path,category,type,status,machine_id,session_id")
+        .eq("id", media_id)
+        .limit(1)
+        .execute()
+    )
+    rows = row_resp.data or []
+    if not rows:
+        raise HTTPException(status_code=404, detail="media_id not found")
+
+    row = rows[0]
+    url = public_storage_url(row["bucket"], row["path"])
+    r = requests.get(url, timeout=60)
+    if r.status_code != 200 or not r.content:
+        raise HTTPException(
+            status_code=500,
+            detail=f"download failed: {r.status_code} {r.text[:200]}",
+        )
+    return row, r.content
+
+
+def extract_mfcc_features(audio_bytes: bytes, ext: str = ".mp3", sr: int = 16000) -> np.ndarray:
+    """Compute a compact audio fingerprint: MFCC mean+std (40-dim)."""
+    with tempfile.NamedTemporaryFile(suffix=ext, delete=True) as tmp:
+        tmp.write(audio_bytes)
+        tmp.flush()
+        y, sr = librosa.load(tmp.name, sr=sr, mono=True)
+
+    # MFCC: (n_mfcc, T)
+    mfcc = librosa.feature.mfcc(y=y, sr=sr, n_mfcc=20)
+    feat = np.concatenate([mfcc.mean(axis=1), mfcc.std(axis=1)], axis=0)
+    return feat.astype(np.float32)
+
+
+def anomaly_score(feat: np.ndarray, mean: np.ndarray, std: np.ndarray) -> float:
+    """Simple z-score distance mapped to 0-100."""
+    z = np.abs((feat - mean) / (std + 1e-6))
+    raw = float(np.mean(z))
+    score = min(100.0, raw * 20.0)
+    return score
+
+
+@app.post("/sound/baseline/rebuild")
+def rebuild_sound_baseline(machine_id: str, mode: str = "idle"):
+    """Build a baseline from labeled GOOD clips for a machine/mode and auto-calibrate threshold."""
+    samples = (
+        supabase.table("sound_samples")
+        .select("media_id,label,mode,machine_id")
+        .eq("machine_id", machine_id)
+        .eq("mode", mode)
+        .execute()
+        .data
+        or []
+    )
+    if not samples:
+        raise HTTPException(status_code=404, detail="No sound_samples found for this machine/mode")
+
+    good_ids = [s["media_id"] for s in samples if s["label"] == "good"]
+    bad_ids = [s["media_id"] for s in samples if s["label"] == "bad"]
+
+    if len(good_ids) < 2:
+        raise HTTPException(status_code=400, detail="Need at least 2 GOOD clips to build a baseline")
+
+    good_feats: list[np.ndarray] = []
+    for mid in good_ids:
+        mrow = (
+            supabase.table("media")
+            .select("id,bucket,path")
+            .eq("id", mid)
+            .limit(1)
+            .execute()
+            .data
+        )
+        if not mrow:
+            continue
+        mrow = mrow[0]
+        url = public_storage_url(mrow["bucket"], mrow["path"])
+        r = requests.get(url, timeout=60)
+        if r.status_code != 200 or not r.content:
+            continue
+        ext = os.path.splitext(mrow["path"])[1] or ".mp3"
+        good_feats.append(extract_mfcc_features(r.content, ext=ext))
+
+    if len(good_feats) < 2:
+        raise HTTPException(status_code=400, detail="Could not load enough GOOD audio clips")
+
+    good_mat = np.stack(good_feats, axis=0)  # (N, 40)
+    mean = good_mat.mean(axis=0)
+    std = good_mat.std(axis=0) + 1e-6
+
+    scores_good = [anomaly_score(f, mean, std) for f in good_mat]
+    max_good = float(max(scores_good))
+
+    scores_bad: list[float] = []
+    for mid in bad_ids:
+        mrow = (
+            supabase.table("media")
+            .select("id,bucket,path")
+            .eq("id", mid)
+            .limit(1)
+            .execute()
+            .data
+        )
+        if not mrow:
+            continue
+        mrow = mrow[0]
+        url = public_storage_url(mrow["bucket"], mrow["path"])
+        r = requests.get(url, timeout=60)
+        if r.status_code != 200 or not r.content:
+            continue
+        ext = os.path.splitext(mrow["path"])[1] or ".mp3"
+        f = extract_mfcc_features(r.content, ext=ext)
+        scores_bad.append(anomaly_score(f, mean, std))
+
+    # Threshold calibration
+    threshold = max_good * 1.15
+    min_bad = float(min(scores_bad)) if scores_bad else None
+    if min_bad is not None and max_good < min_bad:
+        threshold = (max_good + min_bad) / 2.0
+
+    # Store baseline (requires sound_baselines table)
+    supabase.table("sound_baselines").upsert(
+        {
+            "machine_id": machine_id,
+            "mode": mode,
+            "feature_mean": mean.tolist(),
+            "feature_std": std.tolist(),
+            "threshold": float(threshold),
+        },
+        on_conflict="machine_id,mode",
+    ).execute()
+
+    return {
+        "machine_id": machine_id,
+        "mode": mode,
+        "n_good": len(good_ids),
+        "n_bad": len(bad_ids),
+        "max_good": max_good,
+        "min_bad": min_bad,
+        "threshold": float(threshold),
+    }
+
+
+@app.post("/sound/check")
+def sound_check(media_id: str, machine_id: str = "demo-machine", mode: str = "idle"):
+    """Score a single machine-sound clip against the stored baseline."""
+    b = (
+        supabase.table("sound_baselines")
+        .select("feature_mean,feature_std,threshold")
+        .eq("machine_id", machine_id)
+        .eq("mode", mode)
+        .limit(1)
+        .execute()
+        .data
+        or []
+    )
+    if not b:
+        raise HTTPException(status_code=400, detail="No baseline found. Call /sound/baseline/rebuild first.")
+
+    b = b[0]
+    mean = np.array(b["feature_mean"], dtype=np.float32)
+    std = np.array(b["feature_std"], dtype=np.float32)
+    threshold = float(b["threshold"])
+
+    row, audio_bytes = _download_media_bytes(media_id)
+    ext = os.path.splitext(row["path"])[1] or ".mp3"
+    feat = extract_mfcc_features(audio_bytes, ext=ext)
+    score = anomaly_score(feat, mean, std)
+
+    predicted = "bad" if score >= threshold else "good"
+
+    # Store assessment (requires sound_assessments table)
+    supabase.table("sound_assessments").insert(
+        {
+            "media_id": media_id,
+            "machine_id": machine_id,
+            "mode": mode,
+            "anomaly_score": float(score),
+            "predicted_label": predicted,
+        }
+    ).execute()
+
+    return {
+        "media_id": media_id,
+        "bucket": row.get("bucket"),
+        "path": row.get("path"),
+        "anomaly_score": float(score),
+        "threshold": threshold,
+        "predicted_label": predicted,
+    }
