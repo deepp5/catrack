@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import Dict, List, Optional, Literal
@@ -13,8 +13,8 @@ from supabase import create_client
 Status = Literal["PASS", "MONITOR", "FAIL", "none"]
 
 class AnalyzeRequest(BaseModel):
+    inspection_id: str
     user_text: str
-    current_checklist_state: Dict[str, Status]
     images: Optional[List[str]] = None
 
 class ChecklistUpdate(BaseModel):
@@ -206,11 +206,39 @@ def run_inspection_logic(user_text: str, current_checklist_state: Dict[str, Stat
 
 @app.post("/analyze")
 def analyze(req: AnalyzeRequest):
-    return run_inspection_logic(
+    # 1️⃣ Fetch inspection from DB
+    resp = (
+        supabase.table("inspections")
+        .select("id, checklist_json")
+        .eq("id", req.inspection_id)
+        .limit(1)
+        .execute()
+    )
+
+    rows = resp.data or []
+    if not rows:
+        raise HTTPException(status_code=404, detail="Inspection not found")
+
+    checklist_state = rows[0]["checklist_json"]
+
+    # 2️⃣ Run AI logic
+    result = run_inspection_logic(
         req.user_text,
-        req.current_checklist_state,
+        checklist_state,
         req.images
     )
+
+    # 3️⃣ Apply updates to checklist JSON
+    updates = result.get("checklist_updates", {})
+    for item_name, update_data in updates.items():
+        checklist_state[item_name] = update_data["status"]
+
+    # 4️⃣ Save updated checklist back to DB
+    supabase.table("inspections").update(
+        {"checklist_json": checklist_state}
+    ).eq("id", req.inspection_id).execute()
+
+    return result
 
 @app.get("/")
 def root():
@@ -337,7 +365,45 @@ def process_next_audio():
         }
 
     except Exception as e:
+      
         supabase.table("media").update(
             {"status": "failed", "error_message": str(e)}
         ).eq("id", media_id).execute()
         raise HTTPException(status_code=500, detail=f"processing failed: {e}")
+
+
+# New endpoint for voice analysis
+@app.post("/voice-analyze")
+async def voice_analyze(
+    audio_file: UploadFile = File(...),
+    checklist_json: str = Form(...)
+):
+    try:
+        # 1️⃣ Parse checklist JSON sent from frontend
+        current_checklist_state = json.loads(checklist_json)
+
+        # 2️⃣ Read audio bytes
+        audio_bytes = await audio_file.read()
+        f = io.BytesIO(audio_bytes)
+        f.name = audio_file.filename or "audio.m4a"
+
+        # 3️⃣ Transcribe using OpenAI speech model
+        tr = client.audio.transcriptions.create(
+            model=TRANSCRIBE_MODEL,
+            file=f,
+        )
+
+        transcript_text = (tr.text or "").strip()
+
+        if len(transcript_text) < 3:
+            raise RuntimeError("transcript too short/empty")
+
+        # 4️⃣ Run inspection AI logic
+        return run_inspection_logic(
+            user_text=transcript_text,
+            current_checklist_state=current_checklist_state,
+            images=None
+        )
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"voice processing failed: {e}")
