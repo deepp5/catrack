@@ -67,6 +67,7 @@ struct ActiveChatView: View {
         .navigationTitle(machine.model)
         .navigationBarTitleDisplayMode(.inline)
         .tint(.catYellow)
+        // Camera sheet
         .sheet(isPresented: $showCamera) {
             CameraPickerView { image in
                 guard let data = image.jpegData(compressionQuality: 0.8) else { return }
@@ -74,16 +75,21 @@ struct ActiveChatView: View {
                 chatVM.attachMedia(media)
             }
         }
+        // Voice sheet
         .sheet(isPresented: $showVoice) {
-            VoiceRecorderView { url, _ in
-                let media = AttachedMedia(
-                    type: .audio,
-                    filename: url.lastPathComponent,
-                    localURL: url
-                )
-                chatVM.attachMedia(media)
+            VoiceRecorderView { url, duration in
+                Task {
+                    await chatVM.sendVoiceNote(
+                        url: url,
+                        duration: duration,
+                        machineId: machine.id,
+                        machine: machine,
+                        sheetVM: sheetVM
+                    )
+                }
             }
         }
+        // Docs sheet
         .sheet(isPresented: $showDocs) {
             DocumentPickerView { url in
                 let media = AttachedMedia(type: .file, filename: url.lastPathComponent, localURL: url)

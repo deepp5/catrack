@@ -146,4 +146,35 @@ class ChatViewModel: ObservableObject {
     func removeMedia(id: String) {
         pendingMedia.removeAll { $0.id == id }
     }
+    
+    
+    func sendVoiceNote(url: URL, duration: Int, machineId: UUID, machine: Machine, sheetVM: InspectionSheetViewModel) async {
+        // 1. Show voice bubble in chat immediately
+        sessions[machineId, default: []].append(
+            Message.userVoice(url: url, duration: duration)
+        )
+
+        isLoading = true
+        defer { isLoading = false }
+
+        do {
+            // 2. Upload audio to backend, get back transcript
+            let transcript = try await APIService.shared.uploadVoiceNote(localURL: url)
+
+            // 3. Feed transcript into normal analyze flow so AI responds to what was said
+            await sendMessage(
+                text: transcript,
+                machineId: machineId,
+                machine: machine,
+                sheetVM: sheetVM
+            )
+        } catch {
+            sessions[machineId, default: []].append(
+                Message.assistant(text: "Voice upload failed: \(error.localizedDescription)")
+            )
+        }
+    }
+    
+    
+    
 }

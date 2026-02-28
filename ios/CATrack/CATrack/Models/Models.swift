@@ -123,6 +123,8 @@ struct Message: Identifiable, Codable {
     var findings: [FindingCard] = []
     var memoryNote: String?
     var createdAt: Date = Date()
+    var voiceNoteURL: URL?        // ← ADD THIS
+    var voiceNoteDuration: Int?
 
     static func system(_ text: String) -> Message {
         Message(role: .system, text: text)
@@ -132,6 +134,10 @@ struct Message: Identifiable, Codable {
     }
     static func assistant(text: String, findings: [FindingCard] = [], memoryNote: String? = nil) -> Message {
         Message(role: .assistant, text: text, findings: findings, memoryNote: memoryNote)
+    }
+    
+    static func userVoice(url: URL, duration: Int) -> Message {
+        Message(role: .user, text: "", voiceNoteURL: url, voiceNoteDuration: duration)
     }
 }
 

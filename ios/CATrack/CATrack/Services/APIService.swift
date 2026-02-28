@@ -100,4 +100,39 @@ class APIService {
         let decoded = try decoder.decode(UploadResponse.self, from: data)
         return decoded.mediaId
     }
+    
+    
+    func uploadVoiceNote(localURL: URL) async throws -> String {
+        guard let url = URL(string: "\(baseURL)/interpret-audio") else {
+            throw URLError(.badURL)
+        }
+
+        let boundary = UUID().uuidString
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
+
+        let fileData = try Data(contentsOf: localURL)
+        var body = Data()
+        body.append(contentsOf: "--\(boundary)\r\n".utf8)
+        body.append(contentsOf: "Content-Disposition: form-data; name=\"file\"; filename=\"voice_note.m4a\"\r\n".utf8)
+        body.append(contentsOf: "Content-Type: audio/m4a\r\n\r\n".utf8)
+        body.append(fileData)
+        body.append(contentsOf: "\r\n--\(boundary)--\r\n".utf8)
+        request.httpBody = body
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+
+        guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) else {
+            let msg = String(data: data, encoding: .utf8) ?? "Bad server response"
+            throw NSError(domain: "APIService", code: (response as? HTTPURLResponse)?.statusCode ?? -1,
+                          userInfo: [NSLocalizedDescriptionKey: msg])
+        }
+
+        struct VoiceResponse: Decodable { let transcript: String }
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        let decoded = try decoder.decode(VoiceResponse.self, from: data)
+        return decoded.transcript
+    }
 }
