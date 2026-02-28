@@ -68,7 +68,7 @@ struct InspectionSheetView: View {
                         Text("No Active Inspection")
                             .font(.barlow(18, weight: .semibold))
                             .foregroundStyle(.white)
-                        Text("Select a machine from the Chats tab to begin")
+                        Text("Tap Inspect to start a new inspection.")
                             .font(.barlow(14))
                             .foregroundStyle(Color.appMuted)
                             .multilineTextAlignment(.center)
@@ -145,9 +145,14 @@ struct InspectionSheetView: View {
             estimatedCost: 0,
             trends: []
         )
+
         archiveStore.add(record)
         machineStore.updateStatus(machineId: machine.id, status: overallStatus)
         sheetVM.resetSheet(for: machine.id)
+
+        // Clear active inspection — removes Chat tab and resets to picker
+        machineStore.clearActiveChatMachine()
+        machineStore.activeMachineId = nil
     }
 }
 
@@ -332,6 +337,3 @@ struct FinalizeBar: View {
         .overlay(Rectangle().frame(height: 0.5).foregroundStyle(Color.appBorder), alignment: .top)
     }
 }
-
-
-//Add commment 
