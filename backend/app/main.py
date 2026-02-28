@@ -37,72 +37,98 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-@app.post("/analyze", response_model=AnalyzeResponse)
+@app.post("/analyze")
 def analyze(req: AnalyzeRequest):
 
-    system_prompt = """
-    You are an AI inspection assistant for Caterpillar heavy equipment.
+    response = client.responses.create(
+        model="gpt-4.1-mini",
+        input=[
+            {
+                "role": "system",
+                "content": """
+                You are an AI inspection assistant for Caterpillar heavy equipment.
 
-    Your job:
-    1. Determine whether the user's message is:
-    - "inspection_update"
-    - "knowledge_question"
+                You must:
+                1. Classify the message as either:
+                - inspection_update
+                - knowledge_question
 
-    2. If inspection_update:
-    - Choose relevant checklist items ONLY from provided checklist state keys.
-    - Assign status: PASS, MONITOR, or FAIL.
-    - Provide short note.
-    - Estimate risk level (Low, Moderate, High).
+                2. If inspection_update:
+                - Choose checklist items ONLY from the provided checklist keys.
+                - Assign status: PASS, MONITOR, or FAIL.
+                - Provide a short note.
+                - Estimate risk level: Low, Moderate, High.
 
-    3. If knowledge_question:
-    - Do NOT modify checklist.
-    - Provide clear answer.
-    - Do NOT assign risk.
+                3. If knowledge_question:
+                - Do NOT modify checklist.
+                - Provide clear safety or operational guidance.
+                - Do NOT assign risk.
 
-    Return STRICT JSON with this format:
+                Return ONLY valid JSON.
+                Do not include explanations.
+                """
+                            },
+                            {
+                                "role": "user",
+                                "content": f"""
+                User message:
+                {req.user_text}
 
-    {
-    "intent": "...",
-    "checklist_updates": { ... },
-    "risk_score": "... or null",
-    "answer": "... or null",
-    "follow_up_questions": [...]
-    }
-
-    Return ONLY valid JSON.
-    Do not include markdown.
-    """
-
-    user_prompt = f"""
-    User message:
-    {req.user_text}
-
-    Current checklist state:
-    {req.current_checklist_state}
-    """
-
-    response = client.chat.completions.create(
-        model="gpt-4o-mini",
-        messages=[
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_prompt}
+                Current checklist state:
+                {req.current_checklist_state}
+                """
+            }
         ],
-        temperature=0.2
+        response_format={
+            "type": "json_schema",
+            "json_schema": {
+                "name": "inspection_response",
+                "schema": {
+                    "type": "object",
+                    "properties": {
+                        "intent": {
+                            "type": "string",
+                            "enum": ["inspection_update", "knowledge_question"]
+                        },
+                        "checklist_updates": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "object",
+                                "properties": {
+                                    "status": {
+                                        "type": "string",
+                                        "enum": ["PASS", "MONITOR", "FAIL"]
+                                    },
+                                    "note": {"type": "string"}
+                                },
+                                "required": ["status", "note"]
+                            }
+                        },
+                        "risk_score": {
+                            "type": ["string", "null"],
+                            "enum": ["Low", "Moderate", "High", None]
+                        },
+                        "answer": {
+                            "type": ["string", "null"]
+                        },
+                        "follow_up_questions": {
+                            "type": "array",
+                            "items": {"type": "string"}
+                        }
+                    },
+                    "required": [
+                        "intent",
+                        "checklist_updates",
+                        "risk_score",
+                        "answer",
+                        "follow_up_questions"
+                    ]
+                }
+            }
+        }
     )
 
-    ai_output = response.choices[0].message.content
-
-    try:
-        parsed = json.loads(ai_output)
-        return parsed
-    except:
-        return {
-            "intent": "knowledge_question",
-            "checklist_updates": {},
-            "risk_score": None,
-            "answer": "AI  response formatting error.",
-            "follow_up_questions": []
-        }
+    return response.output[0].content[0].text
 
 
 @app.get("/")
