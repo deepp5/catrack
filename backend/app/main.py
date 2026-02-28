@@ -401,7 +401,33 @@ async def voice_analyze(
 ):
     try:
         # 1️⃣ Parse checklist JSON sent from frontend
-        current_checklist_state = json.loads(checklist_json)
+        # Swagger often pre-fills this field with the literal string "string".
+        if checklist_json is None:
+            raise HTTPException(status_code=400, detail="checklist_json is required and must be valid JSON")
+
+        cleaned = checklist_json.strip()
+        if cleaned == "" or cleaned.lower() == "string":
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    "checklist_json must be a valid JSON object (you left the default placeholder). "
+                    "Example: {\"Tires, wheels, stem caps, lug nuts\": \"none\", \"Steps and handholds\": \"none\"}"
+                ),
+            )
+
+        try:
+            current_checklist_state = json.loads(cleaned)
+        except json.JSONDecodeError as e:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"checklist_json is not valid JSON: {e}. "
+                    "Example: {\"Tires, wheels, stem caps, lug nuts\": \"none\", \"Steps and handholds\": \"none\"}"
+                ),
+            )
+
+        if not isinstance(current_checklist_state, dict):
+            raise HTTPException(status_code=400, detail="checklist_json must be a JSON object (dictionary)")
 
         # 2️⃣ Read audio bytes
         audio_bytes = await audio_file.read()
@@ -509,12 +535,34 @@ def generate_report(req: GenerateReportRequest):
     Suggested overall_risk: {overall_risk}
     """
 
-    response = client.responses.create(
-        model="gpt-4.1-mini",
-        input=prompt_text
-    )
+    try:
+        chat = client.chat.completions.create(
+            model="gpt-4.1-mini",
+            messages=[{"role": "user", "content": prompt_text}],
+            # If your installed SDK supports it, this will strongly enforce JSON.
+            # If it doesn't, we'll still fall back to parsing the content below.
+            response_format={"type": "json_object"},
+            temperature=0,
+        )
+        content = chat.choices[0].message.content or ""
+    except TypeError:
+        # Fallback for older SDKs that don't support response_format on chat.completions
+        chat = client.chat.completions.create(
+            model="gpt-4.1-mini",
+            messages=[{"role": "user", "content": prompt_text}],
+            temperature=0,
+        )
+        content = chat.choices[0].message.content or ""
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"OpenAI request failed in generate-report: {e}")
 
-    return json.loads(response.output_text)
+    try:
+        return json.loads(content)
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Report generation returned invalid JSON: {e}. Raw: {content[:400]}"
+        )
 # -----------------------------
 # Machine Sound Health (GOOD/BAD)
 # -----------------------------
