@@ -4,6 +4,7 @@ from pydantic import BaseModel
 from typing import Dict, List, Optional, Literal
 import os
 import json
+import re
 import io
 import requests
 import numpy as np
@@ -245,6 +246,27 @@ def analyze(req: AnalyzeRequest):
     )
 
     rows = resp.data or []
+
+    # If inspection is not found, the iOS client may have sent the machine model
+    # in place of inspection_id (e.g., "WL950-DEMO"). If so, auto-create a new
+    # inspection and continue.
+    if not rows:
+        looks_like_uuid = bool(re.fullmatch(r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}", req.inspection_id.strip()))
+        if not looks_like_uuid:
+            # Treat the provided string as machine_model
+            machine_model = req.inspection_id.strip()
+            created = start_inspection(machine_model)
+            # Re-fetch using the new inspection id
+            req.inspection_id = created["id"]
+            resp = (
+                supabase.table("inspections")
+                .select("id, checklist_json")
+                .eq("id", req.inspection_id)
+                .limit(1)
+                .execute()
+            )
+            rows = resp.data or []
+
     if not rows:
         raise HTTPException(status_code=404, detail="Inspection not found")
 
@@ -267,6 +289,7 @@ def analyze(req: AnalyzeRequest):
         {"checklist_json": checklist_state}
     ).eq("id", req.inspection_id).execute()
 
+    result["inspection_id"] = req.inspection_id
     return result
 
 @app.get("/")
