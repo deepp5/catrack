@@ -41,62 +41,90 @@ app.add_middleware(
 def analyze(req: AnalyzeRequest):
     allowed_items = list(req.current_checklist_state.keys())
 
-    response = client.responses.create(
-        model="gpt-4.1-mini",
-        input=f"""
-        You are an AI inspection assistant for Caterpillar heavy equipment.
+    # Build base instruction text
+    instruction_text = f"""
+    You are an AI inspection assistant for Caterpillar heavy equipment.
 
-        STRICT RULES:
-        - You may ONLY update checklist items from this exact list:
-        {allowed_items}
-        - Do NOT invent new checklist items.
-        - Do NOT include any fields not specified.
-        - Do NOT include risk inside checklist_updates.
-        - risk_score must exist ONLY at the top level.
+    STRICT RULES:
+    - You may ONLY update checklist items from this exact list:
+    {allowed_items}
+    - Do NOT invent new checklist items.
+    - Do NOT include any fields not specified.
+    - Do NOT include risk inside checklist_updates.
+    - risk_score must exist ONLY at the top level.
 
-        Classify the user message as one of:
-        - inspection_update
-        - knowledge_question
-        - unclear_input
+    Classify the user message as one of:
+    - inspection_update
+    - knowledge_question
+    - unclear_input
 
-        If inspection_update:
-        - Update checklist items only from the allowed list above.
-        - Assign PASS, MONITOR, or FAIL.
-        - Provide short note.
-        - Assign risk_score as Low, Moderate, or High.
+    If inspection_update:
+    - Update checklist items only from the allowed list above.
+    - Assign PASS, MONITOR, or FAIL.
+    - Provide short note.
+    - Assign risk_score as Low, Moderate, or High.
 
-        If knowledge_question:
-        - Do NOT modify checklist_updates.
-        - risk_score must be null.
-        - Provide clear guidance in answer.
+    If knowledge_question:
+    - Do NOT modify checklist_updates.
+    - risk_score must be null.
+    - Provide clear guidance in answer.
 
-        If unclear_input:
-        - Do NOT modify checklist_updates.
-        - risk_score must be null.
-        - answer must be null.
-        - Provide helpful follow_up_questions asking for clarification.
+    If unclear_input:
+    - Do NOT modify checklist_updates.
+    - risk_score must be null.
+    - answer must be null.
+    - Provide helpful follow_up_questions asking for clarification.
 
-        Return ONLY valid JSON in this exact format:
-        {{
-          "intent": "inspection_update | knowledge_question | unclear_input",
-          "checklist_updates": {{
-            "Item Name": {{
-              "status": "PASS | MONITOR | FAIL",
-              "note": "string"
-            }}
-          }},
-          "risk_score": "Low | Moderate | High | null",
-          "answer": "string | null",
-          "follow_up_questions": []
+    Return ONLY valid JSON in this exact format:
+    {{
+      "intent": "inspection_update | knowledge_question | unclear_input",
+      "checklist_updates": {{
+        "Item Name": {{
+          "status": "PASS | MONITOR | FAIL",
+          "note": "string"
         }}
+      }},
+      "risk_score": "Low | Moderate | High | null",
+      "answer": "string | null",
+      "follow_up_questions": []
+    }}
 
-        User message:
-        {req.user_text}
+    User message:
+    {req.user_text}
 
-        Current checklist state:
-        {req.current_checklist_state}
-        """
-    )
+    Current checklist state:
+    {req.current_checklist_state}
+    """
+
+    # If images are provided, use multimodal input
+    if req.images and len(req.images) > 0:
+        content_blocks = [
+            {"type": "input_text", "text": instruction_text}
+        ]
+
+        for img in req.images:
+            content_blocks.append(
+                {
+                    "type": "input_image",
+                    "image_url": f"data:image/jpeg;base64,{img}"
+                }
+            )
+
+        response = client.responses.create(
+            model="gpt-4.1-mini",
+            input=[
+                {
+                    "role": "user",
+                    "content": content_blocks
+                }
+            ]
+        )
+    else:
+        # Text-only request
+        response = client.responses.create(
+            model="gpt-4.1-mini",
+            input=instruction_text
+        )
 
     return json.loads(response.output_text)
 
