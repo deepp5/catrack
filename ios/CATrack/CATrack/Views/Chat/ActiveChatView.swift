@@ -54,7 +54,7 @@ struct ActiveChatView: View {
                         let text = inputText.trimmingCharacters(in: .whitespacesAndNewlines)
                         guard !text.isEmpty || !chatVM.pendingMedia.isEmpty else { return }
                         inputText = ""
-                        Task { await chatVM.sendMessage(text: text, machineId: machine.id, machine: machine) }
+                        Task { await chatVM.sendMessage(text: text, machineId: machine.id, machine: machine, sheetVM: sheetVM) }
                     },
                     onCamera: { showCamera = true },
                     onVoice: { showVoice = true },

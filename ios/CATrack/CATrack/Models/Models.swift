@@ -225,3 +225,24 @@ struct SheetUpdate: Decodable {
     var value: FindingSeverity
     var evidenceMediaId: String?
 }
+
+
+// MARK: - FastAPI Analyze Models
+struct FastAnalyzeRequest: Encodable {
+    let userText: String
+    let currentChecklistState: [String: String] // PASS/MONITOR/FAIL/none
+    let images: [String]?
+}
+
+struct FastChecklistUpdate: Decodable {
+    let status: String // PASS/MONITOR/FAIL
+    let note: String?
+}
+
+struct FastAnalyzeResponse: Decodable {
+    let intent: String
+    let checklistUpdates: [String: FastChecklistUpdate]
+    let riskScore: String?
+    let answer: String?
+    let followUpQuestions: [String]
+}
