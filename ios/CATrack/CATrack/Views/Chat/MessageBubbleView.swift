@@ -44,6 +44,8 @@ struct UserMessageView: View {
         HStack(alignment: .bottom, spacing: 8) {
             Spacer(minLength: 60)
             VStack(alignment: .trailing, spacing: 6) {
+
+                // Media chips
                 if !message.media.isEmpty {
                     ScrollView(.horizontal, showsIndicators: false) {
                         HStack(spacing: 8) {
@@ -53,6 +55,14 @@ struct UserMessageView: View {
                         }
                     }
                 }
+
+                // Voice note bubble
+                if let url = message.voiceNoteURL,
+                   let duration = message.voiceNoteDuration {
+                    VoiceNoteBubble(url: url, duration: duration)
+                }
+
+                // Text bubble
                 if !message.text.isEmpty {
                     Text(message.text)
                         .font(.barlow(15))
