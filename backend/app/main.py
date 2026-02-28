@@ -29,6 +29,9 @@ class AnalyzeResponse(BaseModel):
     answer: Optional[str] = None
     follow_up_questions: List[str]
 
+class GenerateReportRequest(BaseModel):
+    inspection_id: str
+
 # FULL_CHECKLIST constant
 FULL_CHECKLIST = {
     "FROM_THE_GROUND": {
@@ -256,6 +259,7 @@ def analyze(req: AnalyzeRequest):
 @app.get("/")
 def root():
     return {"message": "CATrack backend running"}
+
 def public_storage_url(bucket: str, path: str) -> str:
     # Works when the bucket is PUBLIC
     return f"{SUPABASE_URL}/storage/v1/object/public/{bucket}/{path}"
@@ -378,7 +382,7 @@ def process_next_audio():
         }
 
     except Exception as e:
-      
+
         supabase.table("media").update(
             {"status": "failed", "error_message": str(e)}
         ).eq("id", media_id).execute()
@@ -420,3 +424,90 @@ async def voice_analyze(
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"voice processing failed: {e}")
+
+
+# New endpoint for report generation
+@app.post("/generate-report")
+def generate_report(req: GenerateReportRequest):
+    #Fetch inspection from DB
+    resp = (
+        supabase.table("inspections")
+        .select("machine_model, checklist_json")
+        .eq("id", req.inspection_id)
+        .limit(1)
+        .execute()
+    )
+
+    rows = resp.data or []
+    if not rows:
+        raise HTTPException(status_code=404, detail="Inspection not found")
+
+    machine_model = rows[0]["machine_model"]
+    checklist = rows[0]["checklist_json"]
+
+    #compute status breakdown
+    fail_items = []
+    monitor_items = []
+    pass_items = []
+    none_items = []
+
+    for item, status in checklist.items():
+        if status == "FAIL":
+            fail_items.append(item)
+        elif status == "MONITOR":
+            monitor_items.append(item)
+        elif status == "PASS":
+            pass_items.append(item)
+        else:
+            none_items.append(item)
+
+    #determine overall risk (simple heuristic)
+    overall_risk = "Low"
+    if len(fail_items) > 0:
+        overall_risk = "High"
+    elif len(monitor_items) >= 3:
+        overall_risk = "Moderate"
+
+    #Build prompt for report generation
+    prompt_text = f"""
+    You are generating a professional Caterpillar equipment inspection report aligned with standard inspection documentation.
+
+    Machine Model: {machine_model}
+
+    Summary counts:
+    - FAIL: {len(fail_items)}
+    - MONITOR: {len(monitor_items)}
+    - PASS: {len(pass_items)}
+    - NOT CHECKED: {len(none_items)}
+
+    FAIL Items:
+    {fail_items}
+
+    MONITOR Items:
+    {monitor_items}
+
+    Provide a structured report as JSON with exactly these fields:
+    {{
+      "executive_summary": "string",
+      "critical_findings": ["string"],
+      "recommendations": ["string"],
+      "operational_readiness": "string",
+      "overall_risk": "Low | Moderate | High"
+    }}
+
+    Rules:
+    - If there are FAIL items, critical_findings must mention them.
+    - Recommendations should be actionable and safety-aware.
+    - Keep it concise and professional.
+    - Set overall_risk to one of Low/Moderate/High.
+    - Return ONLY valid JSON.
+
+    Suggested overall_risk: {overall_risk}
+    """
+
+    response = client.responses.create(
+        model="gpt-4.1-mini",
+        input=prompt_text
+    )
+
+    return json.loads(response.output_text)
