@@ -31,6 +31,7 @@ struct RootView: View {
 
     @State private var selectedTab: AppTab = .newInspection
     @State private var showChat: Bool = false  // active chat tab visible
+    @State private var autoOpenArchiveRecord: ArchiveRecord? = nil
 
     var body: some View {
         ZStack(alignment: .bottom) {
@@ -59,9 +60,16 @@ struct RootView: View {
                             showChat = true  // switch to chat tab
                         }
                     case .sheet:
-                        InspectionSheetView()
+                        if machineStore.activeChatMachine != nil {
+                            InspectionSheetView()
+                        } else {
+                            EmptyView()
+                                .onAppear {
+                                    selectedTab = .archive
+                                }
+                        }
                     case .archive:
-                        ArchiveListView()
+                        ArchiveListView(autoOpenRecord: $autoOpenArchiveRecord)
                     case .settings:
                         SettingsView()
                     }
@@ -98,9 +106,11 @@ struct RootView: View {
                 .buttonStyle(.plain)
 
                 // Sheet tab
-                NavTabButton(tab: .sheet, isSelected: !showChat && selectedTab == .sheet) {
-                    showChat = false
-                    selectedTab = .sheet
+                if machineStore.activeChatMachine != nil {
+                    NavTabButton(tab: .sheet, isSelected: !showChat && selectedTab == .sheet) {
+                        showChat = false
+                        selectedTab = .sheet
+                    }
                 }
 
                 // Dynamic Chat tab — only shows when inspection is active
@@ -149,6 +159,22 @@ struct RootView: View {
             .ignoresSafeArea(edges: .bottom)
         }
         .ignoresSafeArea(edges: .bottom)
+        .onReceive(NotificationCenter.default.publisher(for: .didFinishInspection)) { notification in
+            showChat = false
+            selectedTab = .archive
+
+            if let record = notification.object as? ArchiveRecord {
+                autoOpenArchiveRecord = record
+            }
+        }
+        .onChange(of: machineStore.activeChatMachine) { newValue in
+            if newValue == nil {
+                showChat = false
+                if selectedTab == .sheet {
+                    selectedTab = .archive
+                }
+            }
+        }
     }
 }
 
@@ -297,4 +323,8 @@ struct InspectionPickerView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Color.appBackground)
     }
+}
+
+extension Notification.Name {
+    static let didFinishInspection = Notification.Name("didFinishInspection")
 }

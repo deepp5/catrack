@@ -2,6 +2,7 @@ import SwiftUI
 
 // MARK: - ArchiveListView
 struct ArchiveListView: View {
+    @Binding var autoOpenRecord: ArchiveRecord?
     @EnvironmentObject var archiveStore: ArchiveStore
     @EnvironmentObject var machineStore: MachineStore
 
@@ -9,6 +10,7 @@ struct ArchiveListView: View {
     @State private var selectedRecord: ArchiveRecord?
     @State private var compareRecord: ArchiveRecord?
     @State private var showCompare = false
+    @State private var navigationPath: [ArchiveRecord] = []
 
     var filtered: [ArchiveRecord] {
         guard !searchText.isEmpty else { return archiveStore.records }
@@ -20,7 +22,7 @@ struct ArchiveListView: View {
     }
 
     var body: some View {
-        NavigationStack {
+        NavigationStack(path: $navigationPath) {
             ZStack {
                 Color.appBackground.ignoresSafeArea()
 
@@ -44,7 +46,7 @@ struct ArchiveListView: View {
 
                         VStack(spacing: 8) {
                             ForEach(filtered) { record in
-                                NavigationLink(destination: ArchiveDetailView(record: record)) {
+                                NavigationLink(value: record) {
                                     ArchiveRowView(record: record)
                                 }
                                 .buttonStyle(.plain)
@@ -60,8 +62,17 @@ struct ArchiveListView: View {
             }
             .navigationTitle("Archive")
             .navigationBarTitleDisplayMode(.large)
+            .navigationDestination(for: ArchiveRecord.self) { record in
+                ArchiveDetailView(record: record)
+            }
         }
         .tint(.catYellow)
+        .onChange(of: autoOpenRecord) { newValue in
+            if let record = newValue {
+                navigationPath = [record]
+                autoOpenRecord = nil
+            }
+        }
     }
 }
 

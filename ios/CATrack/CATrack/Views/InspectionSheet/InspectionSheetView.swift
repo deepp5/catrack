@@ -78,6 +78,22 @@ struct InspectionSheetView: View {
                     .padding(40)
                 }
             }
+            .overlay {
+                if isGeneratingReport {
+                    ZStack {
+                        Color.black
+                            .ignoresSafeArea()
+
+                        ProgressView()
+                            .progressViewStyle(
+                                CircularProgressViewStyle(tint: Color.catYellow)
+                            )
+                            .scaleEffect(1.8)
+                    }
+                    .transition(.opacity)
+                    .animation(.easeInOut(duration: 0.2), value: isGeneratingReport)
+                }
+            }
             .alert("Report Error", isPresented: $showReportError, actions: {
                 Button("OK", role: .cancel) {}
             }, message: {
@@ -211,6 +227,15 @@ struct InspectionSheetView: View {
         archiveStore.add(record)
         machineStore.updateStatus(machineId: machine.id, status: overallStatus)
         sheetVM.resetSheet(for: machine.id)
+
+        // Close active inspection session
+        machineStore.clearActiveChatMachine()
+
+        // Notify RootView to switch to Archive and auto-open this record
+        NotificationCenter.default.post(
+            name: .didFinishInspection,
+            object: record
+        )
     }
 
     private func severityRank(_ s: FindingSeverity) -> Int {
@@ -275,6 +300,13 @@ struct InspectionSheetView: View {
         archiveStore.add(record)
         machineStore.updateStatus(machineId: machine.id, status: overallStatus)
         sheetVM.resetSheet(for: machine.id)
+
+        machineStore.clearActiveChatMachine()
+
+        NotificationCenter.default.post(
+            name: .didFinishInspection,
+            object: record
+        )
     }
 }
 
