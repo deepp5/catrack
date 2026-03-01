@@ -95,9 +95,16 @@ final class HotwordManager: ObservableObject {
             guard let self else { return }
 
             if let error {
+                print("Speech error:", error.localizedDescription)
+
+                // If we are intentionally running continuous mode or mid-command,
+                // do NOT auto-restart aggressively. Let resumeAfterCapture() handle restarts.
+                if self.continuousMode {
+                    return
+                }
+
                 Task { @MainActor in
                     guard self.audioEngine.isRunning else { return }
-                    print("Speech task restarting:", error.localizedDescription)
                     try? self.start()
                 }
                 return
