@@ -3,26 +3,25 @@ import SwiftUI
 // MARK: - ActiveChatView
 struct ActiveChatView: View {
     let machine: Machine
-    
+
     @EnvironmentObject var chatVM: ChatViewModel
     @EnvironmentObject var sheetVM: InspectionSheetViewModel
-    
+
     @State private var inputText = ""
     @State private var showCamera = false
     @State private var showVoice = false
     @State private var showDocs = false
     @State private var showAssist = false
     @FocusState private var inputFocused: Bool
-    
+
     var messages: [Message] {
         chatVM.messagesFor(machine.id).filter { $0.role != .system }
     }
-    
+
     var body: some View {
         ZStack {
             Color.appBackground.ignoresSafeArea()
-            
-            // Faded CAT logo background (add an image named "cat_logo" to Assets.xcassets)
+
             Image("cat_logo")
                 .resizable()
                 .scaledToFit()
@@ -30,9 +29,8 @@ struct ActiveChatView: View {
                 .opacity(0.10)
                 .blur(radius: 0.6)
                 .allowsHitTesting(false)
-            
+
             VStack(spacing: 0) {
-                // Pass showAssist binding so the button lives inside the context bar
                 MachineContextBar(machine: machine, onAssist: { showAssist = true })
 
                 ScrollViewReader { proxy in
@@ -51,7 +49,9 @@ struct ActiveChatView: View {
                         .padding(.bottom, 8)
                     }
                     .onTapGesture {
-                        UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+                        UIApplication.shared.sendAction(
+                            #selector(UIResponder.resignFirstResponder),
+                            to: nil, from: nil, for: nil)
                     }
                     .onChange(of: messages.count) { _, _ in
                         if let last = messages.last {
@@ -59,7 +59,7 @@ struct ActiveChatView: View {
                         }
                     }
                 }
-                
+
                 InputBarView(
                     text: $inputText,
                     pendingMedia: chatVM.pendingMedia,
@@ -68,11 +68,15 @@ struct ActiveChatView: View {
                         let text = inputText.trimmingCharacters(in: .whitespacesAndNewlines)
                         guard !text.isEmpty || !chatVM.pendingMedia.isEmpty else { return }
                         inputText = ""
-                        Task { await chatVM.sendMessage(text: text, machineId: machine.id, machine: machine, sheetVM: sheetVM) }
+                        Task {
+                            await chatVM.sendMessage(
+                                text: text, machineId: machine.id,
+                                machine: machine, sheetVM: sheetVM)
+                        }
                     },
                     onCamera: { showCamera = true },
-                    onVoice: { showVoice = true },
-                    onDocs: { showDocs = true },
+                    onVoice:  { showVoice  = true },
+                    onDocs:   { showDocs   = true },
                     onRemoveMedia: { chatVM.removeMedia(id: $0) }
                 )
                 .focused($inputFocused)
@@ -92,12 +96,8 @@ struct ActiveChatView: View {
             VoiceRecorderView { url, duration in
                 Task {
                     await chatVM.sendVoiceNote(
-                        url: url,
-                        duration: duration,
-                        machineId: machine.id,
-                        machine: machine,
-                        sheetVM: sheetVM
-                    )
+                        url: url, duration: duration,
+                        machineId: machine.id, machine: machine, sheetVM: sheetVM)
                 }
             }
         }
@@ -136,7 +136,6 @@ struct MachineContextBar: View {
                 SeverityBadge(severity: status)
             }
 
-            // Assist button — only shown when onAssist is provided
             if let onAssist {
                 Button(action: onAssist) {
                     Image(systemName: "waveform.circle.fill")
@@ -177,65 +176,14 @@ struct TypingIndicatorView: View {
                         )
                 }
             }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 8)
-            .background(Color.appSurface)
-            .overlay(
-                Rectangle()
-                    .frame(height: 0.5)
-                    .foregroundStyle(Color.appBorder),
-                alignment: .bottom
-            )
+            .padding(.horizontal, 14)
+            .padding(.vertical, 10)
+            .background(Color.appPanel)
+            .clipShape(RoundedRectangle(cornerRadius: K.cornerRadius))
+            Spacer()
         }
-    }
-    
-    // MARK: - TypingIndicatorView
-    struct TypingIndicatorView: View {
-        @State private var dotOpacity: [Double] = [0.3, 0.3, 0.3]
-        
-        var body: some View {
-            HStack(alignment: .bottom, spacing: 8) {
-                AIAvatarView()
-                HStack(spacing: 4) {
-                    ForEach(0..<3) { i in
-                        Circle()
-                            .fill(Color.appMuted)
-                            .frame(width: 6, height: 6)
-                            .opacity(dotOpacity[i])
-                            .animation(
-                                .easeInOut(duration: 0.5).repeatForever().delay(Double(i) * 0.15),
-                                value: dotOpacity[i]
-                            )
-                    }
-                }
-                .padding(.horizontal, 14)
-                .padding(.vertical, 10)
-                .background(Color.appPanel)
-                .clipShape(RoundedRectangle(cornerRadius: K.cornerRadius))
-                Spacer()
-            }
-            .onAppear {
-                for i in 0..<3 {
-                    dotOpacity[i] = 0.9
-                }
-            }
-        }
-    }
-    
-    // MARK: - AIAvatarView
-    struct AIAvatarView: View {
-        var body: some View {
-            ZStack {
-                Circle()
-                    .fill(Color.catYellow.opacity(0.2))
-                    .frame(width: 28, height: 28)
-                Text("AI")
-                    .font(.dmMono(9, weight: .medium))
-                    .foregroundStyle(Color.catYellow)
-            }
+        .onAppear {
+            for i in 0..<3 { dotOpacity[i] = 0.9 }
         }
     }
 }
-    
-
-

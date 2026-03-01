@@ -191,17 +191,6 @@ struct ArchiveDetailView: View {
         }
         .navigationTitle(record.machine)
         .navigationBarTitleDisplayMode(.inline)
-        .navigationDestination(for: ArchiveRecord.self) { r in
-            ReportView(record: r)
-        }
-        .toolbar {
-            ToolbarItem(placement: .navigationBarTrailing) {
-                NavigationLink(value: record) {
-                    Image(systemName: "doc.text.fill")
-                        .foregroundStyle(Color.catYellow)
-                }
-            }
-        }
         .tint(.catYellow)
     }
 }
