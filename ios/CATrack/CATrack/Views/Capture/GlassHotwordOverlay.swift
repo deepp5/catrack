@@ -44,56 +44,61 @@ struct GlassHotwordOverlay: View {
     }
 
     var body: some View {
-        HStack(alignment: .top, spacing: 12) {
-            Image(systemName: icon)
-                .font(.system(size: 16, weight: .semibold))
-                .foregroundStyle(iconColor)
-                .frame(width: 20)
-                .symbolEffect(.pulse, isActive: phase == .listening || phase == .analyzing)
+        GeometryReader { geo in
+            VStack(alignment: .leading, spacing: 20) {
 
-            VStack(alignment: .leading, spacing: 5) {
-                Text(title)
-                    .font(.dmMono(11, weight: .bold))
-                    .foregroundStyle(.white)
-                    .textCase(.uppercase)
+                HStack(spacing: 14) {
+                    Image(systemName: icon)
+                        .font(.system(size: 26, weight: .semibold))
+                        .foregroundStyle(iconColor)
+
+                    Text(title)
+                        .font(.system(size: 20, weight: .bold))
+                        .foregroundStyle(.white)
+                }
 
                 if !transcript.isEmpty {
-                    Text(transcript)
-                        .font(.barlow(13, weight: .semibold))
-                        .foregroundStyle(.white)
-                        .lineLimit(1)
-                        .truncationMode(.tail)
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("Command")
+                            .font(.system(size: 14, weight: .semibold))
+                            .foregroundStyle(.white.opacity(0.7))
+
+                        Text(transcript)
+                            .font(.system(size: 16, weight: .medium))
+                            .foregroundStyle(.white)
+                    }
                 }
 
                 if !result.isEmpty {
-                    Text(result)
-                        .font(.barlow(11))
-                        .foregroundStyle(Color.white.opacity(0.9))
-                        .lineLimit(4)
-                        .multilineTextAlignment(.leading)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-            }
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("Result")
+                            .font(.system(size: 14, weight: .semibold))
+                            .foregroundStyle(.white.opacity(0.7))
 
-            Spacer(minLength: 0)
+                        Text(result)
+                            .font(.system(size: 16))
+                            .foregroundStyle(.white)
+                            .multilineTextAlignment(.leading)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+
+                Spacer()
+            }
+            .padding(24)
+            .frame(width: geo.size.width,
+                   height: geo.size.height * 0.5,
+                   alignment: .topLeading)
+            .background(
+                RoundedRectangle(cornerRadius: 20, style: .continuous)
+                    .fill(Color.black.opacity(0.85))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 20, style: .continuous)
+                    .stroke(Color.white.opacity(0.15), lineWidth: 1)
+            )
+            .shadow(radius: 20)
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 10)
-        // Full width — fills whatever container gives it horizontal space
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .frame(minHeight: 80)
-        .background(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .fill(.ultraThinMaterial)
-                .overlay(
-                    RoundedRectangle(cornerRadius: 16, style: .continuous)
-                        .stroke(Color.white.opacity(0.12), lineWidth: 1)
-                )
-        )
-        .shadow(color: .black.opacity(0.3), radius: 16, x: 0, y: 4)
-        .transition(.move(edge: .top).combined(with: .opacity))
-        .animation(.spring(response: 0.35, dampingFraction: 0.8), value: phase)
-        .animation(.spring(response: 0.35, dampingFraction: 0.8), value: transcript)
-        .animation(.spring(response: 0.35, dampingFraction: 0.8), value: result)
+        .ignoresSafeArea(edges: .top)
     }
 }
