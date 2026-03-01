@@ -97,16 +97,23 @@ final class HotwordManager: ObservableObject {
             if let error {
                 print("Speech error:", error.localizedDescription)
 
-                // If we are intentionally running continuous mode or mid-command,
-                // do NOT auto-restart aggressively. Let resumeAfterCapture() handle restarts.
-                if self.continuousMode {
-                    return
-                }
-
                 Task { @MainActor in
-                    guard self.audioEngine.isRunning else { return }
+                    // If audio engine stopped, restart cleanly
+                    if !self.audioEngine.isRunning {
+                        try? self.start()
+                        return
+                    }
+
+                    // In continuous guided mode, restart quietly
+                    if self.continuousMode {
+                        try? self.start()
+                        return
+                    }
+
+                    // Normal wake-word mode restart
                     try? self.start()
                 }
+
                 return
             }
 
