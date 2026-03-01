@@ -3,8 +3,21 @@ import Combine
 
 @MainActor
 class InspectionSheetViewModel: ObservableObject {
-    @Published var sheetsByMachine: [UUID: [SheetSection]] = [:]
-    @Published var activeMachineId: UUID?
+    @Published var sheetsByMachine: [UUID: [SheetSection]] = [:] {
+        didSet { persist() }
+    }
+    @Published var activeMachineId: UUID? {
+        didSet { persist() }
+    }
+
+    private let storageKey = "catrack.sheetvm"
+
+    private struct Stored: Codable {
+        var sheetsByMachine: [String: [SheetSection]]
+        var activeMachineId: UUID?
+    }
+
+    init() { load() }
 
     var activeSections: [SheetSection] {
         guard let id = activeMachineId else { return [] }
@@ -49,5 +62,25 @@ class InspectionSheetViewModel: ObservableObject {
 
     func resetSheet(for machineId: UUID) {
         sheetsByMachine[machineId] = SheetSection.defaultSections()
+    }
+
+    // MARK: - Persistence
+
+    private func persist() {
+        let stringKeyed = Dictionary(uniqueKeysWithValues: sheetsByMachine.map { ($0.key.uuidString, $0.value) })
+        let stored = Stored(sheetsByMachine: stringKeyed, activeMachineId: activeMachineId)
+        if let data = try? JSONEncoder().encode(stored) {
+            UserDefaults.standard.set(data, forKey: storageKey)
+        }
+    }
+
+    private func load() {
+        guard let data = UserDefaults.standard.data(forKey: storageKey),
+              let stored = try? JSONDecoder().decode(Stored.self, from: data) else { return }
+        sheetsByMachine = Dictionary(uniqueKeysWithValues: stored.sheetsByMachine.compactMap { k, v in
+            guard let uuid = UUID(uuidString: k) else { return nil }
+            return (uuid, v)
+        })
+        activeMachineId = stored.activeMachineId
     }
 }
