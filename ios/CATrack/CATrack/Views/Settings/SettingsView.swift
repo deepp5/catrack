@@ -1,287 +1,305 @@
 import SwiftUI
 
-// MARK: - SettingsView
-struct SettingsView: View {
-    @EnvironmentObject var settingsStore: SettingsStore
-    @State private var editingField: EditableField?
+// MARK: - Part Recommendation Model
+struct PartRecommendation: Identifiable {
+    var id = UUID()
+    var partName: String
+    var partNumber: String
+    var estimatedPrice: String
+    var fixesIssue: String
+    var severity: FindingSeverity
+}
 
-    enum EditableField: Identifiable {
-        case inspectorName, backendURL, defaultSite
-        var id: Self { self }
-        var title: String {
-            switch self {
-            case .inspectorName: return "Inspector Name"
-            case .backendURL:    return "Backend URL"
-            case .defaultSite:   return "Default Site"
-            }
+// MARK: - SettingsView (Parts Recommendations)
+struct SettingsView: View {
+    @EnvironmentObject var machineStore: MachineStore
+    @EnvironmentObject var sheetVM: InspectionSheetViewModel
+    @EnvironmentObject var chatVM: ChatViewModel
+
+    var machine: Machine? { machineStore.activeMachine }
+
+    var sections: [SheetSection] {
+        guard let m = machine else { return [] }
+        return sheetVM.sectionsFor(m.id)
+    }
+
+    var failFields: [(section: String, field: SheetField)] {
+        sections.flatMap { section in
+            section.fields
+                .filter { $0.status == .fail || $0.status == .monitor }
+                .map { (section: section.title, field: $0) }
         }
     }
+
+    var chatFindings: [FindingCard] {
+        guard let m = machine else { return [] }
+        return chatVM.messagesFor(m.id).flatMap { $0.findings }
+    }
+
+    var recommendations: [PartRecommendation] {
+        var parts: [PartRecommendation] = []
+
+        for item in failFields {
+            parts.append(PartRecommendation(
+                partName: partName(for: item.field.label),
+                partNumber: partNumber(for: item.field.label),
+                estimatedPrice: estimatedPrice(for: item.field.status),
+                fixesIssue: item.field.label + " — " + item.section,
+                severity: item.field.status
+            ))
+        }
+
+        for finding in chatFindings {
+            parts.append(PartRecommendation(
+                partName: finding.componentType + " Replacement",
+                partNumber: "CAT-\(finding.componentType.prefix(3).uppercased())-SVC",
+                estimatedPrice: "$\(Int(finding.quantification.costLow))–$\(Int(finding.quantification.costHigh))",
+                fixesIssue: finding.componentLocation,
+                severity: finding.severity
+            ))
+        }
+
+        return parts.sorted { severityRank($0.severity) > severityRank($1.severity) }
+    }
+
+    var failParts: [PartRecommendation] { recommendations.filter { $0.severity == .fail } }
+    var monParts: [PartRecommendation]  { recommendations.filter { $0.severity == .monitor } }
 
     var body: some View {
         NavigationStack {
             ZStack {
                 Color.appBackground.ignoresSafeArea()
 
-                ScrollView {
-                    VStack(spacing: 20) {
-                        SettingsGroup(title: "PROFILE") {
-                            SettingsRow(
-                                icon: "person.fill",
-                                iconColor: .catYellow,
-                                title: "Inspector Name",
-                                value: settingsStore.inspectorName
-                            ) { editingField = .inspectorName }
+                if machine == nil {
+                    emptyState(
+                        icon: "wrench.and.screwdriver",
+                        title: "No Active Inspection",
+                        subtitle: "Start an inspection to get part recommendations."
+                    )
+                } else if recommendations.isEmpty {
+                    emptyState(
+                        icon: "checkmark.seal.fill",
+                        title: "No Parts Needed",
+                        subtitle: "No issues found yet.\nMark fields as FAIL or MON to see recommendations."
+                    )
+                } else {
+                    ScrollView {
+                        VStack(spacing: 12) {
 
-                            SettingsDivider()
+                            // Machine header
+                            if let machine = machine {
+                                HStack(spacing: 10) {
+                                    Image(systemName: "gearshape.2.fill")
+                                        .foregroundStyle(Color.catYellow)
+                                    VStack(alignment: .leading, spacing: 1) {
+                                        Text(machine.model)
+                                            .font(.barlow(14, weight: .semibold))
+                                            .foregroundStyle(.white)
+                                        Text("\(recommendations.count) part(s) recommended")
+                                            .font(.dmMono(11))
+                                            .foregroundStyle(Color.appMuted)
+                                    }
+                                    Spacer()
+                                    Image(systemName: "wrench.and.screwdriver.fill")
+                                        .foregroundStyle(Color.catYellow)
+                                        .font(.system(size: 14))
+                                }
+                                .padding(.horizontal, 16)
+                                .padding(.vertical, 10)
+                                .background(Color.appSurface)
+                                .clipShape(RoundedRectangle(cornerRadius: K.cornerRadius))
+                                .padding(.horizontal, 16)
+                            }
 
-                            SettingsRow(
-                                icon: "map.fill",
-                                iconColor: .catYellowDim,
-                                title: "Default Site",
-                                value: settingsStore.defaultSite.isEmpty ? "Not set" : settingsStore.defaultSite
-                            ) { editingField = .defaultSite }
+                            if !failParts.isEmpty {
+                                PartsSectionLabel(title: "CRITICAL — IMMEDIATE ACTION", color: .severityFail)
+                                ForEach(failParts) { part in
+                                    PartCard(part: part)
+                                }
+                            }
+
+                            if !monParts.isEmpty {
+                                PartsSectionLabel(title: "MONITOR — PLAN REPLACEMENT", color: .severityMon)
+                                ForEach(monParts) { part in
+                                    PartCard(part: part)
+                                }
+                            }
+
+                            Color.clear.frame(height: 80)
                         }
-
-                        SettingsGroup(title: "BACKEND") {
-                            SettingsRow(
-                                icon: "server.rack",
-                                iconColor: .severityPass,
-                                title: "API URL",
-                                value: settingsStore.backendURL
-                            ) { editingField = .backendURL }
-                        }
-
-                        SettingsGroup(title: "AI") {
-                            ToggleRow(
-                                icon: "brain",
-                                iconColor: .catYellow,
-                                title: "Enable Memory",
-                                isOn: $settingsStore.enableMemory
-                            )
-                            SettingsDivider()
-                            ToggleRow(
-                                icon: "eye",
-                                iconColor: .catYellowDim,
-                                title: "Show Confidence Scores",
-                                isOn: $settingsStore.showConfidenceScores
-                            )
-                            SettingsDivider()
-                            ToggleRow(
-                                icon: "chart.bar.fill",
-                                iconColor: .catYellowDim,
-                                title: "Show Quantification",
-                                isOn: $settingsStore.showQuantification
-                            )
-                        }
-
-                        SettingsGroup(title: "WORKFLOW") {
-                            ToggleRow(
-                                icon: "bell.fill",
-                                iconColor: .severityMon,
-                                title: "Notifications",
-                                isOn: $settingsStore.enableNotifications
-                            )
-                            SettingsDivider()
-                            ToggleRow(
-                                icon: "checkmark.seal.fill",
-                                iconColor: .severityPass,
-                                title: "Auto-Finalize Sheet",
-                                isOn: $settingsStore.autoFinalizeSheet
-                            )
-                        }
-
-                        // App Info
-                        VStack(spacing: 4) {
-                            Text("CATrack")
-                                .font(.bebasNeue(size: 18))
-                                .foregroundStyle(Color.catYellow)
-                            Text("AI Inspection Copilot for Caterpillar Equipment")
-                                .font(.barlow(12))
-                                .foregroundStyle(Color.appMuted)
-                                .multilineTextAlignment(.center)
-                            Text("v1.0.0")
-                                .font(.dmMono(10))
-                                .foregroundStyle(Color.appBorder)
-                        }
-                        .padding(.top, 8)
-                        .padding(.bottom, 20)
+                        .padding(.top, 12)
                     }
-                    .padding(.top, 12)
                 }
             }
-            .navigationTitle("Settings")
+            .navigationTitle("Parts")
             .navigationBarTitleDisplayMode(.large)
-            .sheet(item: $editingField) { field in
-                EditFieldSheet(
-                    title: field.title,
-                    currentValue: {
-                        switch field {
-                        case .inspectorName: return settingsStore.inspectorName
-                        case .backendURL:    return settingsStore.backendURL
-                        case .defaultSite:   return settingsStore.defaultSite
-                        }
-                    }()
-                ) { newValue in
-                    switch field {
-                    case .inspectorName: settingsStore.inspectorName = newValue
-                    case .backendURL:    settingsStore.backendURL = newValue
-                    case .defaultSite:   settingsStore.defaultSite = newValue
-                    }
-                }
-            }
         }
     }
-}
 
-// MARK: - SettingsGroup
-struct SettingsGroup<Content: View>: View {
-    let title: String
-    @ViewBuilder let content: Content
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            Text(title)
-                .font(.dmMono(11, weight: .medium))
+    @ViewBuilder
+    private func emptyState(icon: String, title: String, subtitle: String) -> some View {
+        VStack(spacing: 12) {
+            Image(systemName: icon)
+                .font(.system(size: 52))
                 .foregroundStyle(Color.appMuted)
-                .padding(.horizontal, 16)
-                .padding(.bottom, 6)
-
-            VStack(spacing: 0) {
-                content
-            }
-            .background(Color.appPanel)
-            .clipShape(RoundedRectangle(cornerRadius: K.cornerRadius))
-            .padding(.horizontal, 16)
-        }
-    }
-}
-
-// MARK: - SettingsRow
-struct SettingsRow: View {
-    let icon: String
-    let iconColor: Color
-    let title: String
-    let value: String
-    let onTap: () -> Void
-
-    var body: some View {
-        Button(action: onTap) {
-            HStack(spacing: 12) {
-                SettingsIconBox(icon: icon, color: iconColor)
-                Text(title)
-                    .font(.barlow(15))
-                    .foregroundStyle(.white)
-                Spacer()
-                Text(value)
-                    .font(.barlow(14))
-                    .foregroundStyle(Color.appMuted)
-                    .lineLimit(1)
-                Image(systemName: "chevron.right")
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(Color.appMuted)
-            }
-            .padding(.horizontal, K.cardPadding)
-            .padding(.vertical, 12)
-        }
-        .buttonStyle(.plain)
-    }
-}
-
-// MARK: - ToggleRow
-struct ToggleRow: View {
-    let icon: String
-    let iconColor: Color
-    let title: String
-    @Binding var isOn: Bool
-
-    var body: some View {
-        HStack(spacing: 12) {
-            SettingsIconBox(icon: icon, color: iconColor)
             Text(title)
-                .font(.barlow(15))
+                .font(.barlow(18, weight: .semibold))
                 .foregroundStyle(.white)
-            Spacer()
-            Toggle("", isOn: $isOn)
-                .labelsHidden()
-                .tint(.catYellow)
+            Text(subtitle)
+                .font(.barlow(14))
+                .foregroundStyle(Color.appMuted)
+                .multilineTextAlignment(.center)
         }
-        .padding(.horizontal, K.cardPadding)
-        .padding(.vertical, 12)
+        .padding(40)
+    }
+
+    private func severityRank(_ s: FindingSeverity) -> Int {
+        switch s {
+        case .pending: return 0
+        case .pass:    return 1
+        case .monitor: return 2
+        case .fail:    return 3
+        }
+    }
+
+    private func partName(for label: String) -> String {
+        let map: [String: String] = [
+            "Engine oil":                         "Engine Oil Filter",
+            "Engine coolant":                     "Coolant Flush Kit",
+            "Radiator":                           "Radiator Assembly",
+            "All hoses and lines":                "Hydraulic Hose Kit",
+            "Fuel filters / water separator":     "Fuel Filter Element",
+            "All belts":                          "Serpentine Belt Kit",
+            "Air filter":                         "Air Filter Element",
+            "Battery compartment":                "Battery 12V Heavy Duty",
+            "Tires, wheels, stem caps, lug nuts": "Tire Stem Cap Set",
+            "Hydraulic tank":                     "Hydraulic Filter Element",
+            "Transmission oil":                   "Transmission Filter Kit",
+            "Seat belt and mounting":             "Seat Belt Assembly",
+            "Fire extinguisher":                  "Fire Extinguisher 5lb",
+            "Windshield and windows":             "Windshield Glass",
+            "Windshield wipers / washers":        "Wiper Blade Set",
+            "Differential and final drive oil":   "Final Drive Oil Seal Kit",
+            "Transmission, transfer case":        "Transmission Service Kit",
+            "Axles, final drives, differentials, brakes": "Brake Pad Set",
+            "Horn, backup alarm, lights":         "Backup Alarm Unit",
+            "Gauges, indicators, switches, controls": "Instrument Cluster",
+        ]
+        return map[label] ?? "\(label) Service Kit"
+    }
+
+    private func partNumber(for label: String) -> String {
+        let map: [String: String] = [
+            "Engine oil":                         "1R-0716",
+            "Engine coolant":                     "8C-3672",
+            "Radiator":                           "6I-2501",
+            "All hoses and lines":                "5P-0732",
+            "Fuel filters / water separator":     "1R-0755",
+            "All belts":                          "7X-7967",
+            "Air filter":                         "6I-2506",
+            "Battery compartment":                "4P-5578",
+            "Tires, wheels, stem caps, lug nuts": "9X-8562",
+            "Hydraulic tank":                     "1R-0726",
+            "Transmission oil":                   "4T-6788",
+            "Seat belt and mounting":             "5I-7671",
+            "Fire extinguisher":                  "9U-5141",
+            "Windshield and windows":             "2S-4689",
+            "Windshield wipers / washers":        "4K-8341",
+            "Differential and final drive oil":   "3E-6825",
+            "Transmission, transfer case":        "6V-8639",
+            "Axles, final drives, differentials, brakes": "8E-9763",
+            "Horn, backup alarm, lights":         "2T-7981",
+            "Gauges, indicators, switches, controls": "1U-8812",
+        ]
+        return map[label] ?? "CAT-\(label.prefix(3).uppercased())-SVC"
+    }
+
+    private func estimatedPrice(for status: FindingSeverity) -> String {
+        switch status {
+        case .fail:    return "$80–$350"
+        case .monitor: return "$40–$150"
+        default:       return "$20–$80"
+        }
     }
 }
 
-// MARK: - SettingsIconBox
-struct SettingsIconBox: View {
-    let icon: String
+// MARK: - PartsSectionLabel
+struct PartsSectionLabel: View {
+    let title: String
     let color: Color
 
     var body: some View {
-        ZStack {
-            RoundedRectangle(cornerRadius: 8)
-                .fill(color.opacity(0.2))
-                .frame(width: 32, height: 32)
-            Image(systemName: icon)
-                .font(.system(size: 14))
+        HStack(spacing: 6) {
+            Rectangle()
+                .fill(color)
+                .frame(width: 3, height: 12)
+                .clipShape(Capsule())
+            Text(title)
+                .font(.dmMono(10, weight: .medium))
                 .foregroundStyle(color)
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 20)
+        .padding(.top, 4)
     }
 }
 
-// MARK: - SettingsDivider
-struct SettingsDivider: View {
-    var body: some View {
-        Divider()
-            .background(Color.appBorder)
-            .padding(.leading, 56)
-    }
-}
-
-// MARK: - EditFieldSheet
-struct EditFieldSheet: View {
-    @Environment(\.dismiss) private var dismiss
-    let title: String
-    let currentValue: String
-    let onSave: (String) -> Void
-
-    @State private var value: String
-
-    init(title: String, currentValue: String, onSave: @escaping (String) -> Void) {
-        self.title = title
-        self.currentValue = currentValue
-        self.onSave = onSave
-        self._value = State(initialValue: currentValue)
-    }
+// MARK: - PartCard
+struct PartCard: View {
+    let part: PartRecommendation
 
     var body: some View {
-        NavigationStack {
-            ZStack {
-                Color.appBackground.ignoresSafeArea()
-                VStack(spacing: 0) {
-                    TextField(title, text: $value)
-                        .font(.barlow(16))
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .top) {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(part.partName)
+                        .font(.barlow(15, weight: .semibold))
                         .foregroundStyle(.white)
-                        .padding()
-                        .background(Color.appPanel)
-                        .clipShape(RoundedRectangle(cornerRadius: K.cornerRadius))
-                        .padding(16)
-                    Spacer()
+                    Text(part.partNumber)
+                        .font(.dmMono(12, weight: .medium))
+                        .foregroundStyle(Color.catYellow)
                 }
+                Spacer()
+                Text(part.severity.shortLabel)
+                    .font(.dmMono(10, weight: .medium))
+                    .foregroundStyle(part.severity.color)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 3)
+                    .background(part.severity.color.opacity(0.15))
+                    .clipShape(Capsule())
             }
-            .navigationTitle(title)
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { dismiss() }
+
+            Divider().background(Color.appBorder)
+
+            HStack(alignment: .top) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("FIXES")
+                        .font(.dmMono(9, weight: .medium))
                         .foregroundStyle(Color.appMuted)
+                    Text(part.fixesIssue)
+                        .font(.barlow(13))
+                        .foregroundStyle(Color.appMuted)
+                        .lineLimit(2)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Save") {
-                        onSave(value)
-                        dismiss()
-                    }
-                    .foregroundStyle(Color.catYellow)
+                Spacer(minLength: 16)
+                VStack(alignment: .trailing, spacing: 2) {
+                    Text("EST. PRICE")
+                        .font(.dmMono(9, weight: .medium))
+                        .foregroundStyle(Color.appMuted)
+                    Text(part.estimatedPrice)
+                        .font(.dmMono(14, weight: .medium))
+                        .foregroundStyle(.white)
                 }
             }
         }
+        .padding(K.cardPadding)
+        .background(Color.appPanel)
+        .clipShape(RoundedRectangle(cornerRadius: K.cornerRadius))
+        .overlay(
+            RoundedRectangle(cornerRadius: K.cornerRadius)
+                .strokeBorder(part.severity.color.opacity(0.25), lineWidth: 1)
+        )
+        .padding(.horizontal, 16)
     }
 }

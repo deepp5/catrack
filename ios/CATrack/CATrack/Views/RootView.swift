@@ -9,7 +9,7 @@ enum AppTab: Int, CaseIterable {
         case .newInspection: return "Inspect"
         case .sheet:         return "Sheet"
         case .archive:       return "Archive"
-        case .settings:      return "Settings"
+        case .settings:      return "Parts"
         }
     }
 
@@ -18,7 +18,7 @@ enum AppTab: Int, CaseIterable {
         case .newInspection: return "plus.circle.fill"
         case .sheet:         return "checklist"
         case .archive:       return "archivebox.fill"
-        case .settings:      return "gearshape.fill"
+        case .settings:      return "wrench.and.screwdriver.fill"
         }
     }
 }
@@ -44,7 +44,7 @@ struct RootView: View {
                     .opacity(showChat ? 1 : 0)
                     .allowsHitTesting(showChat)
                     .safeAreaInset(edge: .bottom) {
-                        Color.clear.frame(height: K.navHeight)
+                        Color.clear.frame(height: keyboardVisible ? 0 : K.navHeight)
                     }
             }
 
@@ -97,12 +97,22 @@ struct RootView: View {
                         }
                     } label: {
                         VStack(spacing: 4) {
+
+                            let isSelected = !showChat && selectedTab == .newInspection
+
                             Image(systemName: "plus.circle.fill")
-                                .font(.system(size: 26, weight: .semibold))
-                                .foregroundStyle(Color.catYellow)
+                                .font(.system(size: 26,
+                                              weight: isSelected ? .semibold : .regular))
+                                .foregroundStyle(
+                                    isSelected ? Color.catYellow : Color.appMuted
+                                )
+
                             Text("Inspect")
-                                .font(.barlow(10, weight: .semibold))
-                                .foregroundStyle(Color.catYellow)
+                                .font(.barlow(10,
+                                              weight: isSelected ? .semibold : .regular))
+                                .foregroundStyle(
+                                    isSelected ? Color.catYellow : Color.appMuted
+                                )
                         }
                         .frame(maxWidth: .infinity)
                         .padding(.top, 10)
