@@ -71,11 +71,23 @@ class ChatViewModel: ObservableObject {
                 return nil
             }
 
+            // Build chat history payload (last 6 messages, excluding system)
+            let historyPayload: [[String: String]] = sessions[machineId, default: []]
+                .filter { $0.role != .system }
+                .suffix(6)
+                .map { msg in
+                    [
+                        "role": msg.role == .assistant ? "assistant" : "user",
+                        "content": msg.text
+                    ]
+                }
+
             // 4) Call FastAPI /analyze
             let resp = try await APIService.shared.analyzeFastAPI(
                 inspectionId: activeInspectionIds[machineId] ?? "",
                 userText: text,
-                imagesBase64: imagesBase64.isEmpty ? nil : imagesBase64
+                imagesBase64: imagesBase64.isEmpty ? nil : imagesBase64,
+                chatHistory: historyPayload
             )
 
             // 5) Convert checklist updates

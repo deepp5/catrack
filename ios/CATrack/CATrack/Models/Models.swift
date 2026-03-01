@@ -238,6 +238,7 @@ struct FastAnalyzeRequest: Encodable {
     let inspectionId: String
     let userText: String
     let images: [String]?
+    let chatHistory: [[String: String]]?
 }
 
 struct FastChecklistUpdate: Decodable {

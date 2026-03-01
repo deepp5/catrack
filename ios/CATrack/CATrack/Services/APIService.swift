@@ -44,7 +44,8 @@ class APIService {
 
     func analyzeFastAPI(inspectionId: String,
                         userText: String,
-                        imagesBase64: [String]?) async throws -> FastAnalyzeResponse {
+                        imagesBase64: [String]?,
+                        chatHistory: [[String: String]]? = nil) async throws -> FastAnalyzeResponse {
 
         guard let url = URL(string: "\(baseURL)/analyze") else {
             throw URLError(.badURL)
@@ -57,7 +58,8 @@ class APIService {
         let payload = FastAnalyzeRequest(
             inspectionId: inspectionId,
             userText: userText,
-            images: imagesBase64
+            images: imagesBase64,
+            chatHistory: chatHistory
         )
 
         let encoder = JSONEncoder()
