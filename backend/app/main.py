@@ -19,10 +19,15 @@ class AnalyzeRequest(BaseModel):
     inspection_id: str
     user_text: str
     images: Optional[List[str]] = None
+    chat_history: Optional[List[Dict[str, str]]] = None  # [{"role": "user|assistant", "content": "..."}]
 
 class ChecklistUpdate(BaseModel):
     status: Literal["PASS", "MONITOR", "FAIL"]
     note: Optional[str] = None
+
+class SyncChecklistRequest(BaseModel):
+    inspection_id: str
+    checklist: Dict[str, str]
 
 
 class AnalyzeResponse(BaseModel):
@@ -137,7 +142,12 @@ def analyze_video_command(req: AnalyzeVideoCommandRequest):
 
 
 
-def run_inspection_logic(user_text: str, current_checklist_state: Dict[str, Status], images: Optional[List[str]] = None):
+def run_inspection_logic(
+    user_text: str,
+    current_checklist_state: Dict[str, Status],
+    images: Optional[List[str]] = None,
+    chat_history: Optional[List[Dict[str, str]]] = None
+):
     canonical_keys = get_flat_checklist_keys()
 
     # Validate incoming checklist keys against canonical checklist
@@ -225,17 +235,34 @@ def run_inspection_logic(user_text: str, current_checklist_state: Dict[str, Stat
                 }
             ]
         )
+        return json.loads(response.output_text)
     else:
-        response = client.responses.create(
+        # Build message list with memory
+        messages = [
+            {"role": "system", "content": instruction_text}
+        ]
+
+        if chat_history:
+            for msg in chat_history[-6:]:  # last 6 messages only
+                if msg.get("role") in ["user", "assistant"]:
+                    messages.append({
+                        "role": msg["role"],
+                        "content": msg["content"]
+                    })
+
+        messages.append({"role": "user", "content": user_text})
+
+        response = client.chat.completions.create(
             model="gpt-4.1-mini",
-            input=instruction_text
+            messages=messages,
+            temperature=0
         )
 
-    return json.loads(response.output_text)
+        return json.loads(response.choices[0].message.content)
 
 @app.post("/analyze")
 def analyze(req: AnalyzeRequest):
-    # 1️⃣ Fetch inspection from DB
+    #Fetch inspection from DB
     resp = (
         supabase.table("inspections")
         .select("id, checklist_json")
@@ -250,19 +277,20 @@ def analyze(req: AnalyzeRequest):
 
     checklist_state = rows[0]["checklist_json"]
 
-    # 2️⃣ Run AI logic
+    #Run AI logic
     result = run_inspection_logic(
-        req.user_text,
-        checklist_state,
-        req.images
+        user_text=req.user_text,
+        current_checklist_state=checklist_state,
+        images=req.images,
+        chat_history=req.chat_history
     )
 
-    # 3️⃣ Apply updates to checklist JSON
+    # Apply updates to checklist JSON
     updates = result.get("checklist_updates", {})
     for item_name, update_data in updates.items():
         checklist_state[item_name] = update_data["status"]
 
-    # 4️⃣ Save updated checklist back to DB
+    #Save updated checklist back to DB
     supabase.table("inspections").update(
         {"checklist_json": checklist_state}
     ).eq("id", req.inspection_id).execute()
@@ -298,7 +326,26 @@ def debug_next_media():
         return {"message": "no uploaded audio found"}
     return rows[0]
 
+@app.post("/sync-checklist")
+def sync_checklist(req: SyncChecklistRequest):
+    # Validate inspection exists
+    resp = (
+        supabase.table("inspections")
+        .select("id")
+        .eq("id", req.inspection_id)
+        .limit(1)
+        .execute()
+    )
 
+    if not resp.data:
+        raise HTTPException(status_code=404, detail="Inspection not found")
+
+    # Update checklist_json directly
+    supabase.table("inspections").update(
+        {"checklist_json": req.checklist}
+    ).eq("id", req.inspection_id).execute()
+
+    return {"status": "ok"}
 
 @app.get("/debug/download/{media_id}")
 def debug_download(media_id: str):
@@ -514,6 +561,22 @@ def generate_report(req: GenerateReportRequest):
     elif len(monitor_items) >= 3:
         overall_risk = "Moderate"
 
+    # Compute numeric risk score (0–100). Backend is source of truth.
+    total_items = len(checklist)
+
+    # Base score
+    risk_score = 100
+
+    # Penalize FAIL and MONITOR
+    risk_score -= len(fail_items) * 10
+    risk_score -= len(monitor_items) * 3
+
+    # Optional: lightly penalize unchecked items
+    risk_score -= len(none_items) * 2
+
+    # Clamp between 0 and 100
+    risk_score = max(0, min(100, risk_score))
+
     #Build prompt for report generation
     prompt_text = f"""
     You are generating a professional Caterpillar equipment inspection report aligned with standard inspection documentation.
@@ -538,7 +601,8 @@ def generate_report(req: GenerateReportRequest):
       "critical_findings": ["string"],
       "recommendations": ["string"],
       "operational_readiness": "string",
-      "overall_risk": "Low | Moderate | High"
+      "overall_risk": "Low | Moderate | High",
+      "risk_score": 0
     }}
 
     Rules:
@@ -573,7 +637,9 @@ def generate_report(req: GenerateReportRequest):
         raise HTTPException(status_code=500, detail=f"OpenAI request failed in generate-report: {e}")
 
     try:
-        return json.loads(content)
+        report = json.loads(content)
+        report["risk_score"] = risk_score
+        return report
     except Exception as e:
         raise HTTPException(
             status_code=500,

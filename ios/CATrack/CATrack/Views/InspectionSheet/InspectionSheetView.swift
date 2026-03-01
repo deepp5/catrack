@@ -7,7 +7,9 @@ struct InspectionSheetView: View {
     @EnvironmentObject var archiveStore: ArchiveStore
     @EnvironmentObject var settingsStore: SettingsStore
 
-    @State private var showFinalizeConfirm = false
+    @State private var isGeneratingReport = false
+    @State private var reportErrorMessage: String? = nil
+    @State private var showReportError = false
 
     var machine: Machine? { machineStore.activeMachine }
     var sections: [SheetSection] {
@@ -16,74 +18,143 @@ struct InspectionSheetView: View {
     }
 
     var body: some View {
-        NavigationStack {
-            ZStack {
-                Color.appBackground.ignoresSafeArea()
+        ZStack {
+            NavigationStack {
+                ZStack {
+                    Color.appBackground.ignoresSafeArea()
 
-                if let machine = machine {
-                    VStack(spacing: 0) {
-                        SheetMachineStrip(machine: machine)
+                    if let machine = machine {
+                        VStack(spacing: 0) {
+                            SheetMachineStrip(machine: machine)
 
-                        ScrollView {
-                            VStack(spacing: 12) {
-                                ForEach(sections) { section in
-                                    VStack(spacing: 0) {
-                                        SheetSectionHeader(section: section)
-                                        ForEach(section.fields) { field in
-                                            SheetFieldCard(
-                                                field: field,
-                                                onUpdate: { newStatus, note in
-                                                    sheetVM.updateField(
-                                                        machineId: machine.id,
-                                                        sectionId: section.id,
-                                                        fieldId: field.id,
-                                                        status: newStatus,
-                                                        note: note
-                                                    )
+                            ScrollView {
+                                VStack(spacing: 12) {
+                                    ForEach(sections) { section in
+                                        VStack(spacing: 0) {
+                                            SheetSectionHeader(section: section)
+                                            ForEach(section.fields) { field in
+                                                SheetFieldCard(
+                                                    field: field,
+                                                    onUpdate: { newStatus, note in
+                                                        sheetVM.updateField(
+                                                            machineId: machine.id,
+                                                            sectionId: section.id,
+                                                            fieldId: field.id,
+                                                            status: newStatus,
+                                                            note: note
+                                                        )
+                                                    }
+                                                )
+                                                if field.id != section.fields.last?.id {
+                                                    Divider().background(Color.appBorder).padding(.leading, 16)
                                                 }
-                                            )
-                                            if field.id != section.fields.last?.id {
-                                                Divider().background(Color.appBorder).padding(.leading, 16)
                                             }
                                         }
+                                        .background(Color.appPanel)
+                                        .clipShape(RoundedRectangle(cornerRadius: K.cornerRadius))
+                                        .padding(.horizontal, 16)
                                     }
-                                    .background(Color.appPanel)
-                                    .clipShape(RoundedRectangle(cornerRadius: K.cornerRadius))
-                                    .padding(.horizontal, 16)
+                                    Color.clear.frame(height: 80)
                                 }
-                                Color.clear.frame(height: 80)
+                                .padding(.top, 12)
                             }
-                            .padding(.top, 12)
-                        }
 
-                        FinalizeBar(sections: sections) {
-                            showFinalizeConfirm = true
+                            FinalizeBar(sections: sections) {
+                                generateReport()
+                            }
                         }
+                    } else {
+                        VStack(spacing: 12) {
+                            Image(systemName: "checklist")
+                                .font(.system(size: 52))
+                                .foregroundStyle(Color.appMuted)
+                            Text("No Active Inspection")
+                                .font(.barlow(18, weight: .semibold))
+                                .foregroundStyle(.white)
+                            Text("Select a machine from the Chats tab to begin")
+                                .font(.barlow(14))
+                                .foregroundStyle(Color.appMuted)
+                                .multilineTextAlignment(.center)
+                        }
+                        .padding(40)
                     }
-                } else {
-                    // No active inspection
-                    VStack(spacing: 12) {
-                        Image(systemName: "checklist")
-                            .font(.system(size: 52))
-                            .foregroundStyle(Color.appMuted)
-                        Text("No Active Inspection")
-                            .font(.barlow(18, weight: .semibold))
-                            .foregroundStyle(.white)
-                        Text("Tap Inspect to start a new inspection.")
-                            .font(.barlow(14))
-                            .foregroundStyle(Color.appMuted)
-                            .multilineTextAlignment(.center)
-                    }
-                    .padding(40)
                 }
+                .alert("Report Error", isPresented: $showReportError, actions: {
+                    Button("OK", role: .cancel) {}
+                }, message: {
+                    Text(reportErrorMessage ?? "Unknown error")
+                })
+                .navigationTitle(isGeneratingReport ? "" : "Inspection Sheet")
+                .navigationBarTitleDisplayMode(.large)
+                .toolbar(isGeneratingReport ? .hidden : .visible, for: .navigationBar)
             }
-            .navigationTitle("Inspection Sheet")
-            .navigationBarTitleDisplayMode(.large)
-            .confirmationDialog("Finalize Inspection?", isPresented: $showFinalizeConfirm, titleVisibility: .visible) {
-                Button("Finalize & Archive", role: .none) { finalizeInspection() }
-                Button("Cancel", role: .cancel) {}
-            } message: {
-                Text("This will save the inspection to your archive.")
+
+            if isGeneratingReport {
+                ZStack {
+                    Color.black
+                        .ignoresSafeArea()
+
+                    ProgressView()
+                        .progressViewStyle(
+                            CircularProgressViewStyle(tint: Color.catYellow)
+                        )
+                        .scaleEffect(1.8)
+                }
+                .transition(.opacity)
+                .animation(.easeInOut(duration: 0.2), value: isGeneratingReport)
+            }
+        }
+    }
+
+
+    private func generateReport() {
+        guard !isGeneratingReport else { return }
+
+        // Try to locate the active backend inspection id.
+        // Prefer UserDefaults keys so this view compiles even if other stores change.
+        let possibleKeys = ["activeInspectionId", "inspectionId", "currentInspectionId", "active_inspection_id"]
+        let inspectionId = possibleKeys
+            .compactMap { UserDefaults.standard.string(forKey: $0) }
+            .first
+
+        guard let inspectionId, !inspectionId.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            reportErrorMessage = "Missing inspection_id. Make sure you started an inspection before generating a report."
+            showReportError = true
+            return
+        }
+
+        NotificationCenter.default.post(name: .didStartGeneratingReport, object: nil)
+        isGeneratingReport = true
+
+        Task {
+            do {
+                //Flatten current sheet state into backend checklist format
+                let flatChecklist: [String: String] = sections.reduce(into: [:]) { result, section in
+                    for field in section.fields {
+                        result[field.label] = field.status.rawValue
+                    }
+                }
+
+                //Sync latest manual updates to backend before generating report
+                try await APIService.shared.syncChecklist(
+                    inspectionId: inspectionId,
+                    checklist: flatChecklist
+                )
+
+                // Calls FastAPI /generate-report
+                let report = try await APIService.shared.generateReport(inspectionId: inspectionId)
+                await MainActor.run {
+                    NotificationCenter.default.post(name: .didEndGeneratingReport, object: nil)
+                    isGeneratingReport = false
+                    finalizeInspection(with: report)
+                }
+            } catch {
+                await MainActor.run {
+                    NotificationCenter.default.post(name: .didEndGeneratingReport, object: nil)
+                    isGeneratingReport = false
+                    reportErrorMessage = error.localizedDescription
+                    showReportError = true
+                }
             }
         }
     }
@@ -98,6 +169,7 @@ struct InspectionSheetView: View {
     }
 
     private func finalizeInspection() {
+    private func finalizeInspection(with report: GenerateReportResponse) {
         guard let machine = machine else { return }
 
         let allFindings = sections.flatMap { section in
@@ -126,13 +198,96 @@ struct InspectionSheetView: View {
         let allStatuses = sections.map { $0.overallStatus }
         let overallStatus = allStatuses.max(by: { severityRank($0) < severityRank($1) }) ?? .pass
 
-        let riskScore: Int
-        switch overallStatus {
-        case .pending: riskScore = 50
-        case .pass:    riskScore = 95
-        case .monitor: riskScore = 75
-        case .fail:    riskScore = 55
+        // Use backend authoritative numeric risk score
+        let riskScore = report.riskScore
+
+        let summaryLines: [String] = [
+            report.executiveSummary,
+            "",
+            report.operationalReadiness,
+            "",
+            report.criticalFindings.isEmpty ? "" : ("Critical Findings:\n- " + report.criticalFindings.joined(separator: "\n- ")),
+            "",
+            report.recommendations.isEmpty ? "" : ("Recommendations:\n- " + report.recommendations.joined(separator: "\n- "))
+        ].filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+
+        let record = ArchiveRecord(
+            machine: machine.model,
+            serial: machine.serial,
+            date: Date(),
+            inspector: settingsStore.inspectorName,
+            site: machine.site,
+            hours: machine.hours,
+            riskScore: riskScore,
+            aiSummary: summaryLines.joined(separator: "\n"),
+            sections: sections,
+            findings: allFindings,
+            estimatedCost: 0,
+            trends: []
+        )
+        archiveStore.add(record)
+        machineStore.updateStatus(machineId: machine.id, status: overallStatus)
+        sheetVM.resetSheet(for: machine.id)
+
+        // Close active inspection session
+        machineStore.clearActiveChatMachine()
+
+        // Notify RootView to switch to Archive and auto-open this record
+        NotificationCenter.default.post(
+            name: .didFinishInspection,
+            object: record
+        )
+    }
+
+    private func severityRank(_ s: FindingSeverity) -> Int {
+        switch s {
+        case .pass:    return 0
+        case .monitor: return 1
+        case .fail:    return 2
         }
+    }
+
+    private func finalizeInspection() {
+        // If we are generating via AI report, this path is not used.
+        guard let machine = machine else { return }
+
+        let allFindings = sections.flatMap { section in
+            section.fields.compactMap { field -> FindingCard? in
+                guard field.status != .pass else { return nil }
+                return FindingCard(
+                    componentType: field.label,
+                    componentLocation: section.title,
+                    condition: field.note.isEmpty ? field.label : field.note,
+                    severity: field.status,
+                    confidence: 1.0,
+                    quantification: Quantification(
+                        failureProbability: field.status == .fail ? 0.8 : 0.4,
+                        timeToFailure: "N/A",
+                        safetyRisk: field.status == .fail ? 70 : 30,
+                        safetyLabel: field.status == .fail ? "High" : "Moderate",
+                        costLow: 0,
+                        costHigh: 0,
+                        downtimeLow: 0,
+                        downtimeHigh: 0
+                    )
+                )
+            }
+        }
+
+        let allStatuses = sections.map { $0.overallStatus }
+        let overallStatus = allStatuses.max(by: { severityRank($0) < severityRank($1) }) ?? .pass
+
+        // Manual fallback when AI report not used
+        // Compute simple backend-aligned heuristic
+        let failCount = sections.flatMap { $0.fields }.filter { $0.status == .fail }.count
+        let monitorCount = sections.flatMap { $0.fields }.filter { $0.status == .monitor }.count
+        let noneCount = sections.flatMap { $0.fields }.filter { $0.status.rawValue.lowercased() == "none" }.count
+
+        var riskScore = 100
+        riskScore -= failCount * 10
+        riskScore -= monitorCount * 3
+        riskScore -= noneCount * 2
+        riskScore = max(0, min(100, riskScore))
 
         let record = ArchiveRecord(
             machine: machine.model,
@@ -152,8 +307,13 @@ struct InspectionSheetView: View {
         archiveStore.add(record)
         machineStore.updateStatus(machineId: machine.id, status: overallStatus)
         sheetVM.resetSheet(for: machine.id)
+
         machineStore.clearActiveChatMachine()
-        machineStore.activeMachineId = nil
+
+        NotificationCenter.default.post(
+            name: .didFinishInspection,
+            object: record
+        )
     }
 }
 
@@ -327,7 +487,7 @@ struct FinalizeBar: View {
             }
             Spacer()
             Button(action: onFinalize) {
-                Text("FINALIZE")
+                Text("GENERATE REPORT")
                     .font(.dmMono(13, weight: .medium))
                     .foregroundStyle(pendingCount == 0 ? .black : Color.appMuted)
                     .padding(.horizontal, 20)

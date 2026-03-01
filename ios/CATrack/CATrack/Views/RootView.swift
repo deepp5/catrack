@@ -30,10 +30,9 @@ struct RootView: View {
     @EnvironmentObject var chatVM: ChatViewModel
 
     @State private var selectedTab: AppTab = .newInspection
-    @State private var showChat: Bool = false
-    @State private var keyboardVisible: Bool = false
-
-    var hasActiveInspection: Bool { machineStore.activeChatMachine != nil }
+    @State private var showChat: Bool = false  // active chat tab visible
+    @State private var autoOpenArchiveRecord: ArchiveRecord? = nil
+    @State private var hideBottomNav: Bool = false
 
     var body: some View {
         ZStack(alignment: .bottom) {
@@ -67,9 +66,16 @@ struct RootView: View {
                             showChat = true
                         }
                     case .sheet:
-                        InspectionSheetView()
+                        if machineStore.activeChatMachine != nil {
+                            InspectionSheetView()
+                        } else {
+                            EmptyView()
+                                .onAppear {
+                                    selectedTab = .archive
+                                }
+                        }
                     case .archive:
-                        ArchiveListView()
+                        ArchiveListView(autoOpenRecord: $autoOpenArchiveRecord)
                     case .settings:
                         SettingsView()
                     }
@@ -78,13 +84,19 @@ struct RootView: View {
                 .padding(.bottom, K.navHeight)
             }
 
-            // Bottom navbar — hides when keyboard is open in chat
-            if !keyboardVisible || !showChat {
+            if !hideBottomNav {
                 HStack(spacing: 0) {
+                    // Plus / Inspect button
                     Button {
-                        machineStore.clearActiveChatMachine()
-                        showChat = false
-                        selectedTab = .newInspection
+                        if machineStore.activeChatMachine != nil {
+                            // Already in inspection — confirm reset or just go to picker
+                            machineStore.clearActiveChatMachine()
+                            showChat = false
+                            selectedTab = .newInspection
+                        } else {
+                            showChat = false
+                            selectedTab = .newInspection
+                        }
                     } label: {
                         VStack(spacing: 4) {
                             Image(systemName: "plus.circle.fill")
@@ -99,33 +111,16 @@ struct RootView: View {
                     }
                     .buttonStyle(.plain)
 
-                    // Sheet tab — dimmed when no active inspection
-                    Button {
-                        guard hasActiveInspection else { return }
-                        showChat = false
-                        selectedTab = .sheet
-                    } label: {
-                        VStack(spacing: 4) {
-                            Image(systemName: "checklist")
-                                .font(.system(size: 22, weight: !showChat && selectedTab == .sheet ? .semibold : .regular))
-                                .foregroundStyle(
-                                    !showChat && selectedTab == .sheet ? Color.catYellow :
-                                    hasActiveInspection ? Color.appMuted : Color.appMuted.opacity(0.4)
-                                )
-                            Text("Sheet")
-                                .font(.barlow(10, weight: !showChat && selectedTab == .sheet ? .semibold : .regular))
-                                .foregroundStyle(
-                                    !showChat && selectedTab == .sheet ? Color.catYellow :
-                                    hasActiveInspection ? Color.appMuted : Color.appMuted.opacity(0.4)
-                                )
+                    // Sheet tab
+                    if machineStore.activeChatMachine != nil {
+                        NavTabButton(tab: .sheet, isSelected: !showChat && selectedTab == .sheet) {
+                            showChat = false
+                            selectedTab = .sheet
                         }
-                        .frame(maxWidth: .infinity)
-                        .padding(.top, 10)
                     }
-                    .buttonStyle(.plain)
 
-                    // Dynamic Chat tab
-                    if hasActiveInspection {
+                    // Dynamic Chat tab — only shows when inspection is active
+                    if machineStore.activeChatMachine != nil {
                         Button {
                             showChat = true
                         } label: {
@@ -144,11 +139,13 @@ struct RootView: View {
                         .transition(.opacity.combined(with: .scale(scale: 0.8)))
                     }
 
+                    // Archive tab
                     NavTabButton(tab: .archive, isSelected: !showChat && selectedTab == .archive) {
                         showChat = false
                         selectedTab = .archive
                     }
 
+                    // Settings tab
                     NavTabButton(tab: .settings, isSelected: !showChat && selectedTab == .settings) {
                         showChat = false
                         selectedTab = .settings
@@ -166,15 +163,30 @@ struct RootView: View {
                         )
                 )
                 .ignoresSafeArea(edges: .bottom)
-                .transition(.move(edge: .bottom).combined(with: .opacity))
             }
         }
-        .animation(.easeInOut(duration: 0.25), value: keyboardVisible)
-        .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillShowNotification)) { _ in
-            keyboardVisible = true
+        .ignoresSafeArea(edges: .bottom)
+        .onReceive(NotificationCenter.default.publisher(for: .didFinishInspection)) { notification in
+            showChat = false
+            selectedTab = .archive
+
+            if let record = notification.object as? ArchiveRecord {
+                autoOpenArchiveRecord = record
+            }
         }
-        .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillHideNotification)) { _ in
-            keyboardVisible = false
+        .onReceive(NotificationCenter.default.publisher(for: .didStartGeneratingReport)) { _ in
+            hideBottomNav = true
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .didEndGeneratingReport)) { _ in
+            hideBottomNav = false
+        }
+        .onChange(of: machineStore.activeChatMachine) { newValue in
+            if newValue == nil {
+                showChat = false
+                if selectedTab == .sheet {
+                    selectedTab = .archive
+                }
+            }
         }
     }
 }
@@ -447,4 +459,10 @@ struct InspectionPickerView: View {
         .disabled(selectedMachine == nil)
         .animation(.easeInOut(duration: 0.15), value: selectedMachine?.id)
     }
+}
+
+extension Notification.Name {
+    static let didFinishInspection = Notification.Name("didFinishInspection")
+    static let didStartGeneratingReport = Notification.Name("didStartGeneratingReport")
+    static let didEndGeneratingReport = Notification.Name("didEndGeneratingReport")
 }
