@@ -31,6 +31,7 @@ struct RootView: View {
 
     @State private var selectedTab: AppTab = .newInspection
     @State private var showChat: Bool = false
+    @State private var keyboardVisible: Bool = false
 
     var hasActiveInspection: Bool { machineStore.activeChatMachine != nil }
 
@@ -38,16 +39,21 @@ struct RootView: View {
         ZStack(alignment: .bottom) {
             Color.appBackground.ignoresSafeArea()
 
-            ZStack {
-                // Always-rendered chat view so it never gets destroyed
-                if let machine = machineStore.activeChatMachine {
-                    ActiveChatView(machine: machine)
-                        .opacity(showChat ? 1 : 0)
-                        .allowsHitTesting(showChat)
-                }
+            // Chat view — always rendered, keyboard avoidance works naturally
+            if let machine = machineStore.activeChatMachine {
+                ActiveChatView(machine: machine)
+                    .opacity(showChat ? 1 : 0)
+                    .allowsHitTesting(showChat)
+                    .safeAreaInset(edge: .bottom) {
+                        // When keyboard is hidden, reserve space for navbar
+                        // When keyboard is visible, no extra space needed
+                        Color.clear.frame(height: keyboardVisible ? 0 : K.navHeight)
+                    }
+            }
 
-                // Other tabs rendered on top when chat not showing
-                if !showChat {
+            // Other tabs — only shown when chat is hidden
+            if !showChat {
+                ZStack {
                     switch selectedTab {
                     case .newInspection:
                         InspectionPickerView { machine in
@@ -68,102 +74,108 @@ struct RootView: View {
                         SettingsView()
                     }
                 }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .padding(.bottom, K.navHeight)
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .padding(.bottom, K.navHeight)
 
-            // Bottom navbar
-            HStack(spacing: 0) {
-                // Plus / Inspect button
-                Button {
-                    machineStore.clearActiveChatMachine()
-                    showChat = false
-                    selectedTab = .newInspection
-                } label: {
-                    VStack(spacing: 4) {
-                        Image(systemName: "plus.circle.fill")
-                            .font(.system(size: 26, weight: .semibold))
-                            .foregroundStyle(Color.catYellow)
-                        Text("Inspect")
-                            .font(.barlow(10, weight: .semibold))
-                            .foregroundStyle(Color.catYellow)
-                    }
-                    .frame(maxWidth: .infinity)
-                    .padding(.top, 10)
-                }
-                .buttonStyle(.plain)
-
-                // Sheet tab — dimmed when no active inspection
-                Button {
-                    guard hasActiveInspection else { return }
-                    showChat = false
-                    selectedTab = .sheet
-                } label: {
-                    VStack(spacing: 4) {
-                        Image(systemName: "checklist")
-                            .font(.system(size: 22, weight: !showChat && selectedTab == .sheet ? .semibold : .regular))
-                            .foregroundStyle(
-                                !showChat && selectedTab == .sheet ? Color.catYellow :
-                                hasActiveInspection ? Color.appMuted : Color.appMuted.opacity(0.4)
-                            )
-                        Text("Sheet")
-                            .font(.barlow(10, weight: !showChat && selectedTab == .sheet ? .semibold : .regular))
-                            .foregroundStyle(
-                                !showChat && selectedTab == .sheet ? Color.catYellow :
-                                hasActiveInspection ? Color.appMuted : Color.appMuted.opacity(0.4)
-                            )
-                    }
-                    .frame(maxWidth: .infinity)
-                    .padding(.top, 10)
-                }
-                .buttonStyle(.plain)
-
-                // Dynamic Chat tab — only shows when inspection is active
-                if hasActiveInspection {
+            // Bottom navbar — hides when keyboard is open in chat
+            if !keyboardVisible || !showChat {
+                HStack(spacing: 0) {
                     Button {
-                        showChat = true
+                        machineStore.clearActiveChatMachine()
+                        showChat = false
+                        selectedTab = .newInspection
                     } label: {
                         VStack(spacing: 4) {
-                            Image(systemName: "bubble.left.and.bubble.right.fill")
-                                .font(.system(size: 22, weight: showChat ? .semibold : .regular))
-                                .foregroundStyle(showChat ? Color.catYellow : Color.appMuted)
-                            Text("Chat")
-                                .font(.barlow(10, weight: showChat ? .semibold : .regular))
-                                .foregroundStyle(showChat ? Color.catYellow : Color.appMuted)
+                            Image(systemName: "plus.circle.fill")
+                                .font(.system(size: 26, weight: .semibold))
+                                .foregroundStyle(Color.catYellow)
+                            Text("Inspect")
+                                .font(.barlow(10, weight: .semibold))
+                                .foregroundStyle(Color.catYellow)
                         }
                         .frame(maxWidth: .infinity)
                         .padding(.top, 10)
                     }
                     .buttonStyle(.plain)
-                    .transition(.opacity.combined(with: .scale(scale: 0.8)))
-                }
 
-                // Archive tab
-                NavTabButton(tab: .archive, isSelected: !showChat && selectedTab == .archive) {
-                    showChat = false
-                    selectedTab = .archive
-                }
+                    // Sheet tab — dimmed when no active inspection
+                    Button {
+                        guard hasActiveInspection else { return }
+                        showChat = false
+                        selectedTab = .sheet
+                    } label: {
+                        VStack(spacing: 4) {
+                            Image(systemName: "checklist")
+                                .font(.system(size: 22, weight: !showChat && selectedTab == .sheet ? .semibold : .regular))
+                                .foregroundStyle(
+                                    !showChat && selectedTab == .sheet ? Color.catYellow :
+                                    hasActiveInspection ? Color.appMuted : Color.appMuted.opacity(0.4)
+                                )
+                            Text("Sheet")
+                                .font(.barlow(10, weight: !showChat && selectedTab == .sheet ? .semibold : .regular))
+                                .foregroundStyle(
+                                    !showChat && selectedTab == .sheet ? Color.catYellow :
+                                    hasActiveInspection ? Color.appMuted : Color.appMuted.opacity(0.4)
+                                )
+                        }
+                        .frame(maxWidth: .infinity)
+                        .padding(.top, 10)
+                    }
+                    .buttonStyle(.plain)
 
-                // Settings tab
-                NavTabButton(tab: .settings, isSelected: !showChat && selectedTab == .settings) {
-                    showChat = false
-                    selectedTab = .settings
+                    // Dynamic Chat tab
+                    if hasActiveInspection {
+                        Button {
+                            showChat = true
+                        } label: {
+                            VStack(spacing: 4) {
+                                Image(systemName: "bubble.left.and.bubble.right.fill")
+                                    .font(.system(size: 22, weight: showChat ? .semibold : .regular))
+                                    .foregroundStyle(showChat ? Color.catYellow : Color.appMuted)
+                                Text("Chat")
+                                    .font(.barlow(10, weight: showChat ? .semibold : .regular))
+                                    .foregroundStyle(showChat ? Color.catYellow : Color.appMuted)
+                            }
+                            .frame(maxWidth: .infinity)
+                            .padding(.top, 10)
+                        }
+                        .buttonStyle(.plain)
+                        .transition(.opacity.combined(with: .scale(scale: 0.8)))
+                    }
+
+                    NavTabButton(tab: .archive, isSelected: !showChat && selectedTab == .archive) {
+                        showChat = false
+                        selectedTab = .archive
+                    }
+
+                    NavTabButton(tab: .settings, isSelected: !showChat && selectedTab == .settings) {
+                        showChat = false
+                        selectedTab = .settings
+                    }
                 }
+                .animation(.easeInOut(duration: 0.2), value: machineStore.activeChatMachine?.id)
+                .frame(height: K.navHeight)
+                .background(
+                    Color.appSurface
+                        .overlay(
+                            Rectangle()
+                                .frame(height: 0.5)
+                                .foregroundStyle(Color.appBorder),
+                            alignment: .top
+                        )
+                )
+                .ignoresSafeArea(edges: .bottom)
+                .transition(.move(edge: .bottom).combined(with: .opacity))
             }
-            .animation(.easeInOut(duration: 0.2), value: machineStore.activeChatMachine?.id)
-            .frame(height: K.navHeight)
-            .background(
-                Color.appSurface
-                    .overlay(
-                        Rectangle()
-                            .frame(height: 0.5)
-                            .foregroundStyle(Color.appBorder),
-                        alignment: .top
-                    )
-            )
-            .ignoresSafeArea(edges: .bottom)
         }
-        .ignoresSafeArea(edges: .bottom)
+        .animation(.easeInOut(duration: 0.25), value: keyboardVisible)
+        .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillShowNotification)) { _ in
+            keyboardVisible = true
+        }
+        .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillHideNotification)) { _ in
+            keyboardVisible = false
+        }
     }
 }
 

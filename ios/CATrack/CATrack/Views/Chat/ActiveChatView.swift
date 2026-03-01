@@ -39,6 +39,9 @@ struct ActiveChatView: View {
                         .padding(.top, 12)
                         .padding(.bottom, 8)
                     }
+                    .onTapGesture {
+                        UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+                    }
                     .onChange(of: messages.count) { _, _ in
                         if let last = messages.last {
                             withAnimation { proxy.scrollTo(last.id, anchor: .bottom) }
@@ -64,7 +67,6 @@ struct ActiveChatView: View {
                 .focused($inputFocused)
             }
         }
-        // ← REMOVED .ignoresSafeArea(.keyboard, edges: .bottom)
         .navigationTitle(machine.model)
         .navigationBarTitleDisplayMode(.inline)
         .tint(.catYellow)
@@ -177,5 +179,4 @@ struct ActiveChatView: View {
             }
         }
     }
-    
 }
