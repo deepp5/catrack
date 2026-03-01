@@ -124,7 +124,21 @@ struct AssistCaptureView: View {
         var checklistState: [String: String] = [:]
         for s in sections {
             for f in s.fields {
-                checklistState[f.label] = f.status.rawValue  // use label (matches backend keys)
+
+                let backendValue: String
+
+                switch f.status {
+                case .pass:
+                    backendValue = "PASS"
+                case .monitor:
+                    backendValue = "MONITOR"
+                case .fail:
+                    backendValue = "FAIL"
+                case .pending:
+                    backendValue = "none"
+                }
+
+                checklistState[f.label] = backendValue
             }
         }
 
