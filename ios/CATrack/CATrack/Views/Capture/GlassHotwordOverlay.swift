@@ -67,10 +67,11 @@ struct GlassHotwordOverlay: View {
 
                 if !result.isEmpty {
                     Text(result)
-                        .font(.barlow(12))
-                        .foregroundStyle(Color.white.opacity(0.85))
-                        .lineLimit(2)
-                        .truncationMode(.tail)
+                        .font(.barlow(11))
+                        .foregroundStyle(Color.white.opacity(0.9))
+                        .lineLimit(4)
+                        .multilineTextAlignment(.leading)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
             }
 
@@ -80,7 +81,7 @@ struct GlassHotwordOverlay: View {
         .padding(.vertical, 10)
         // Full width — fills whatever container gives it horizontal space
         .frame(maxWidth: .infinity, alignment: .leading)
-        .frame(maxHeight: 110)
+        .frame(minHeight: 80)
         .background(
             RoundedRectangle(cornerRadius: 16, style: .continuous)
                 .fill(.ultraThinMaterial)
