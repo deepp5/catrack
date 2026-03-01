@@ -1,4 +1,4 @@
-# CATrack — AI Inspection Copilot for Caterpillar Equipment
+# CATAI — AI Inspection Copilot for Caterpillar Equipment
 
 > **Inspect smarter. Flag faster. Report instantly.**
 
