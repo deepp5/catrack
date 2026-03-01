@@ -16,7 +16,7 @@ struct GlassHotwordOverlay: View {
 
     @State private var pulseScale:   CGFloat = 1.0
     @State private var pulseOpacity: Double  = 0.6
-    //testing adding to github
+
     private var accentColor: Color {
         switch phase {
         case .listening, .heard, .analyzing: return .catYellow
@@ -38,33 +38,33 @@ struct GlassHotwordOverlay: View {
     private var statusLabel: String {
         switch phase {
         case .listening:
-            return .catYellow
+            return "LISTENING"
 
         case .heard:
-            return .catYellow
+            return "HEARD"
 
         case .analyzing:
-            return .catYellow
+            return "ANALYZING"
 
         case .done:
             let lower = result.lowercased()
 
             if lower.contains("fail") {
-                return .severityFail
+                return "FAIL"
             }
 
             if lower.contains("monitor") {
-                return .severityMon
+                return "MONITOR"
             }
 
             if lower.contains("pass") {
-                return .severityPass
+                return "PASS"
             }
 
-            return .severityPass
+            return "DONE"
 
         case .error:
-            return .severityFail
+            return "ERROR"
         }
     }
 

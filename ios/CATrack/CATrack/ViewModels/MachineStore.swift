@@ -17,6 +17,29 @@ class MachineStore: ObservableObject {
         var activeMachineId: UUID?
         var activeChatMachine: Machine?
     }
+
+    private func persist() {
+        let stored = Stored(activeMachineId: activeMachineId, activeChatMachine: activeChatMachine)
+        do {
+            let data = try JSONEncoder().encode(stored)
+            UserDefaults.standard.set(data, forKey: storageKey)
+        } catch {
+            // Failing to persist should not crash the app.
+            print("MachineStore.persist encode error: \(error)")
+        }
+    }
+
+    private func load() {
+        guard let data = UserDefaults.standard.data(forKey: storageKey) else { return }
+        do {
+            let stored = try JSONDecoder().decode(Stored.self, from: data)
+            self.activeMachineId = stored.activeMachineId
+            self.activeChatMachine = stored.activeChatMachine
+        } catch {
+            // If stored data is incompatible, ignore it.
+            print("MachineStore.load decode error: \(error)")
+        }
+    }
     //testing adding to github
     init() { load() }
 
