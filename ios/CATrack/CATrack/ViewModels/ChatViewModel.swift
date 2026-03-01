@@ -1,5 +1,7 @@
 import Foundation
 import Combine
+import AVFoundation
+import UIKit
 
 @MainActor
 class ChatViewModel: ObservableObject {
@@ -25,6 +27,37 @@ class ChatViewModel: ObservableObject {
                 print("Failed to start inspection:", error)
             }
         }
+    }
+
+    // Helper: Extract frames from a video file and return them as base64-encoded JPEGs
+    private func extractFramesBase64(from videoURL: URL, maxFrames: Int = 5) async throws -> [String] {
+        let asset = AVAsset(url: videoURL)
+        let generator = AVAssetImageGenerator(asset: asset)
+        generator.appliesPreferredTrackTransform = true
+
+        let duration = try await asset.load(.duration)
+        let totalSeconds = CMTimeGetSeconds(duration)
+        guard totalSeconds > 0 else { return [] }
+
+        var times: [NSValue] = []
+        let step = totalSeconds / Double(maxFrames)
+        for i in 0..<maxFrames {
+            let cmTime = CMTime(seconds: Double(i) * step, preferredTimescale: 600)
+            times.append(NSValue(time: cmTime))
+        }
+
+        var frames: [String] = []
+
+        for time in times {
+            if let cgImage = try? generator.copyCGImage(at: time.timeValue, actualTime: nil) {
+                let uiImage = UIImage(cgImage: cgImage)
+                if let data = uiImage.jpegData(compressionQuality: 0.7) {
+                    frames.append(data.base64EncodedString())
+                }
+            }
+        }
+
+        return frames
     }
 
     func sendMessage(text: String, machineId: UUID, machine: Machine, sheetVM: InspectionSheetViewModel) async {
@@ -71,6 +104,14 @@ class ChatViewModel: ObservableObject {
                 return nil
             }
 
+            // 3b) Extract video frames if video attached
+            let videoMedia = uploadedMedia.first(where: { $0.type == .video })
+            var videoFramesBase64: [String]? = nil
+
+            if let video = videoMedia, let videoURL = video.localURL {
+                videoFramesBase64 = try await extractFramesBase64(from: videoURL)
+            }
+
             // Build chat history payload (last 6 messages, excluding system)
             let historyPayload: [[String: String]] = sessions[machineId, default: []]
                 .filter { $0.role != .system }
@@ -82,13 +123,23 @@ class ChatViewModel: ObservableObject {
                     ]
                 }
 
-            // 4) Call FastAPI /analyze
-            let resp = try await APIService.shared.analyzeFastAPI(
-                inspectionId: activeInspectionIds[machineId] ?? "",
-                userText: text,
-                imagesBase64: imagesBase64.isEmpty ? nil : imagesBase64,
-                chatHistory: historyPayload
-            )
+            // 4) Call FastAPI /analyze or /analyzeVideoCommand depending on presence of video frames
+            let resp: FastAnalyzeResponse
+
+            if let frames = videoFramesBase64, !frames.isEmpty {
+                resp = try await APIService.shared.analyzeVideoCommand(
+                    userText: text,
+                    currentChecklistState: currentChecklistState,
+                    framesBase64: frames
+                )
+            } else {
+                resp = try await APIService.shared.analyzeFastAPI(
+                    inspectionId: activeInspectionIds[machineId] ?? "",
+                    userText: text,
+                    imagesBase64: imagesBase64.isEmpty ? nil : imagesBase64,
+                    chatHistory: historyPayload
+                )
+            }
 
             // 5) Convert checklist updates
             var sheetUpdates: [SheetUpdate] = []
