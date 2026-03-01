@@ -91,6 +91,7 @@ struct AssistCaptureView: View {
             overlayTranscript = ""
             overlayResult = ""
         case .finalCommand(let cmd):
+            print("🔥 FINAL COMMAND RECEIVED:", cmd)
             Task { await runCommand(cmd) }
         case .error(let msg):
             showOverlay = true

@@ -4,7 +4,7 @@ import Foundation
 class APIService {
     static let shared = APIService()
 //    private var baseURL: String = "http://192.168.10.201:8000"
-    private var baseURL: String = "https://unannihilated-tuberculoid-zainab.ngrok-free.dev/docs"
+    private var baseURL: String = "https://unannihilated-tuberculoid-zainab.ngrok-free.dev"
 
     private init() {}
 
