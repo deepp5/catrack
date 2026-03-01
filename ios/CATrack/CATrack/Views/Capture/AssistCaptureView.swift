@@ -22,19 +22,16 @@ struct AssistCaptureView: View {
             CameraPreview(session: camera.session)
                 .ignoresSafeArea()
 
-            // Overlay only visible after wake word
+            // Overlay — centered at top, only visible after wake word
             VStack {
-                HStack {
-                    Spacer()
-                    if showOverlay {
-                        GlassHotwordOverlay(
-                            phase: overlayPhase,
-                            transcript: overlayTranscript,
-                            result: overlayResult
-                        )
-                        .padding(.top, 10)
-                        .padding(.trailing, 12)
-                    }
+                if showOverlay {
+                    GlassHotwordOverlay(
+                        phase: overlayPhase,
+                        transcript: overlayTranscript,
+                        result: overlayResult
+                    )
+                    .padding(.horizontal, 16)
+                    .padding(.top, 12)
                 }
                 Spacer()
             }
@@ -45,17 +42,12 @@ struct AssistCaptureView: View {
             }
         }
         .onAppear {
-            // Start camera WITHOUT audio so hotword can use .playAndRecord cleanly
             camera.setSessionAudioEnabled(false)
             camera.start()
 
             Task {
-                // Wait for camera session to fully start before touching audio session
                 await waitForSessionReady()
-
-                // Extra buffer — AVCaptureSession needs time to settle audio hardware
-                try? await Task.sleep(nanoseconds: 500_000_000) // 0.5s
-
+                try? await Task.sleep(nanoseconds: 500_000_000) // 0.5s settle
                 do {
                     try await hotword.requestPermissions()
                     try hotword.start()
@@ -76,7 +68,7 @@ struct AssistCaptureView: View {
         }
     }
 
-    // MARK: - State Handler
+    // MARK: - Hotword State Handler
 
     private func handleHotwordState(_ newState: HotwordManager.ListenState) {
         switch newState {
@@ -110,7 +102,7 @@ struct AssistCaptureView: View {
         overlayTranscript = cmd
         overlayResult = ""
 
-        // Pause hotword mic tap before capture
+        // Pause hotword mic before capture so audio hardware is free
         hotword.pauseAudio()
         try? await Task.sleep(nanoseconds: 300_000_000) // 0.3s
 
@@ -127,22 +119,29 @@ struct AssistCaptureView: View {
 
         overlayResult = "Sending to CAT AI…"
 
+        // Build current checklist state from sheet
         let sections = sheetVM.sectionsFor(machine.id)
         var checklistState: [String: String] = [:]
-        for s in sections { for f in s.fields { checklistState[f.id] = f.status.rawValue } }
+        for s in sections {
+            for f in s.fields {
+                checklistState[f.label] = f.status.rawValue  // use label (matches backend keys)
+            }
+        }
 
         do {
-            let resp = try await APIService.shared.analyzeFastAPI(
-                inspectionId: machine.id.uuidString,
+            // Use analyzeVideoCommand → hits /analyze-video-command
+            // This endpoint takes checklist state directly (no DB inspection_id needed)
+            let resp = try await APIService.shared.analyzeVideoCommand(
                 userText: cmd,
                 currentChecklistState: checklistState,
-                imagesBase64: [jpeg.base64EncodedString()]
+                framesBase64: [jpeg.base64EncodedString()]
             )
 
+            // Apply checklist updates back to the sheet
             var updates: [SheetUpdate] = []
-            for (key, upd) in resp.checklistUpdates {
+            for (backendKey, upd) in resp.checklistUpdates {
                 guard let sev = FindingSeverity(rawValue: upd.status) else { continue }
-                guard let hit = findField(key, in: sections) else { continue }
+                guard let hit = findField(backendKey, in: sections) else { continue }
                 updates.append(SheetUpdate(
                     sheetSection: hit.sectionId,
                     fieldId: hit.fieldId,
@@ -150,11 +149,20 @@ struct AssistCaptureView: View {
                     evidenceMediaId: nil
                 ))
             }
-            if !updates.isEmpty { sheetVM.applyUpdates(updates, for: machine.id) }
+            if !updates.isEmpty {
+                sheetVM.applyUpdates(updates, for: machine.id)
+            }
 
-            let summary = updates.isEmpty
-                ? compact(resp.answer ?? "Done.")
-                : "Updated \(updates.count) item\(updates.count == 1 ? "" : "s") · Risk: \(resp.riskScore ?? "n/a")"
+            // Build result summary for overlay
+            let summary: String
+            if !updates.isEmpty {
+                let risk = resp.riskScore ?? "n/a"
+                summary = "Updated \(updates.count) item\(updates.count == 1 ? "" : "s") · Risk: \(risk)"
+            } else if let answer = resp.answer, !answer.isEmpty {
+                summary = compact(answer)
+            } else {
+                summary = "No updates found."
+            }
 
             overlayPhase = .done
             overlayResult = summary
@@ -166,7 +174,7 @@ struct AssistCaptureView: View {
 
         isWorking = false
 
-        // Show result for 2s then reset for next command
+        // Show result for 2s, then reset for next command
         try? await Task.sleep(nanoseconds: 2_000_000_000)
         hotword.resumeAfterCapture()
         showOverlay = false
@@ -226,9 +234,12 @@ struct AssistCaptureView: View {
         }
     }
 
-    private func findField(_ key: String, in sections: [SheetSection]) -> (sectionId: String, fieldId: String)? {
+    /// Match backend key (item label) to the field in the sheet sections
+    private func findField(_ backendKey: String, in sections: [SheetSection]) -> (sectionId: String, fieldId: String)? {
         for sec in sections {
-            if let f = sec.fields.first(where: { $0.id == key }) { return (sec.id, f.id) }
+            if let f = sec.fields.first(where: { $0.label == backendKey || $0.id == backendKey }) {
+                return (sec.id, f.id)
+            }
         }
         return nil
     }

@@ -10,9 +10,22 @@
 		144EC2AC2F52D6F80025F78F /* CATrack.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = CATrack.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
+/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		2B2F27442F5407DA0046C267 /* Exceptions for "CATrack" folder in "CATrack" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = 144EC2AB2F52D6F80025F78F /* CATrack */;
+		};
+/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
+
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		144EC2AE2F52D6F80025F78F /* CATrack */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				2B2F27442F5407DA0046C267 /* Exceptions for "CATrack" folder in "CATrack" target */,
+			);
 			path = CATrack;
 			sourceTree = "<group>";
 		};
@@ -254,6 +267,7 @@
 				DEVELOPMENT_TEAM = P4GSKK79H9;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = CATrack/Info.plist;
 				INFOPLIST_KEY_NSCameraUsageDescription = "CATrack uses the camera to capture photos for machine inspections and defect detection";
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "CATrack uses the microphone to listen for voice commands during inspections.";
 				INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "CATrack uses speech recognition to process voice commands for inspection checklists.";
@@ -289,6 +303,7 @@
 				DEVELOPMENT_TEAM = P4GSKK79H9;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = CATrack/Info.plist;
 				INFOPLIST_KEY_NSCameraUsageDescription = "CATrack uses the camera to capture photos for machine inspections and defect detection";
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "CATrack uses the microphone to listen for voice commands during inspections.";
 				INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "CATrack uses speech recognition to process voice commands for inspection checklists.";
