@@ -39,7 +39,7 @@ class SyncChecklistRequest(BaseModel):
 class AnalyzeResponse(BaseModel):
     intent: Literal["inspection_update", "knowledge_question", "unclear_input"]
     checklist_updates: Dict[str, ChecklistUpdate]
-    update_reasoning: Optional[Dict[str, str]] = None
+    update_reasoning: Dict[str, str] = {}
     risk_score: Optional[Literal["Low", "Moderate", "High"]] = None
     answer: Optional[str] = None
     follow_up_questions: List[str]
@@ -440,21 +440,56 @@ def analyze(req: AnalyzeRequest):
     result["memory_hits"] = memory_hits
 
     # Ensure update_reasoning exists (so UI can show what/why)
+    # The model usually returns this, but we also generate a richer fallback so
+    # the UI can explain *why* an item changed.
+    def _fallback_reason(item_name: str, status: str, note: str, user_text: str) -> str:
+        ut = (user_text or "").strip()
+        n = (note or "").strip()
+        s = (status or "").strip()
+
+        # Short, readable explanation for operators
+        reason_parts: list[str] = []
+        if ut:
+            reason_parts.append(f"You reported: \"{ut[:160]}\".")
+        if n:
+            reason_parts.append(f"Key detail: {n}")
+
+        # Safety / operational implication by status
+        if s == "FAIL":
+            reason_parts.append("Marked **FAIL** because this is a safety-critical issue that can cause damage or unsafe operation if not corrected.")
+            reason_parts.append("Recommended next step: stop operation for this item and repair/replace before continuing.")
+        elif s == "MONITOR":
+            reason_parts.append("Marked **MONITOR** because this may worsen over time. Continue operation cautiously and re-check soon.")
+            reason_parts.append("Recommended next step: document severity and schedule inspection/maintenance.")
+        elif s == "PASS":
+            reason_parts.append("Marked **PASS** because no defect was described and the condition appears acceptable based on the observation.")
+        else:
+            reason_parts.append("Updated based on the inspection detail provided.")
+
+        # Keep it concise (2–4 sentences)
+        text = " ".join(reason_parts).strip()
+        return text
+
     updates = result.get("checklist_updates", {})
     reasoning = result.get("update_reasoning")
     if not isinstance(reasoning, dict):
         reasoning = {}
+
     if isinstance(updates, dict):
         for item_name, upd in updates.items():
-            if item_name in reasoning:
+            # If the model gave a real reason, keep it.
+            existing = reasoning.get(item_name)
+            if isinstance(existing, str) and existing.strip():
                 continue
+
             note = ""
+            status = ""
             if isinstance(upd, dict):
                 note = str(upd.get("note") or "").strip()
                 status = str(upd.get("status") or "").strip()
-            else:
-                status = ""
-            reasoning[item_name] = note or (f"Updated to {status} based on the reported inspection detail." if status else "Updated based on the reported inspection detail.")
+
+            reasoning[item_name] = _fallback_reason(item_name, status, note, req.user_text)
+
     result["update_reasoning"] = reasoning
 
     # Apply updates to checklist JSON
@@ -761,21 +796,50 @@ async def voice_analyze(
         result["memory_hits"] = memory_hits
 
         # Ensure update_reasoning exists (so UI can show what/why)
+        # The model usually returns this, but we also generate a richer fallback so
+        # the UI can explain *why* an item changed.
+        def _fallback_reason(item_name: str, status: str, note: str, user_text: str) -> str:
+            ut = (user_text or "").strip()
+            n = (note or "").strip()
+            s = (status or "").strip()
+
+            reason_parts: list[str] = []
+            if ut:
+                reason_parts.append(f"Transcript said: \"{ut[:160]}\".")
+            if n:
+                reason_parts.append(f"Key detail: {n}")
+
+            if s == "FAIL":
+                reason_parts.append("Marked **FAIL** because this is safety-critical and needs repair before operation.")
+                reason_parts.append("Recommended next step: stop operation for this item and repair/replace before continuing.")
+            elif s == "MONITOR":
+                reason_parts.append("Marked **MONITOR** because this may worsen; re-check soon and schedule maintenance.")
+            elif s == "PASS":
+                reason_parts.append("Marked **PASS** because no defect was described and the condition appears acceptable.")
+            else:
+                reason_parts.append("Updated based on the inspection detail provided.")
+
+            return " ".join(reason_parts).strip()
+
         updates = result.get("checklist_updates", {})
         reasoning = result.get("update_reasoning")
         if not isinstance(reasoning, dict):
             reasoning = {}
+
         if isinstance(updates, dict):
             for item_name, upd in updates.items():
-                if item_name in reasoning:
+                existing = reasoning.get(item_name)
+                if isinstance(existing, str) and existing.strip():
                     continue
+
                 note = ""
+                status = ""
                 if isinstance(upd, dict):
                     note = str(upd.get("note") or "").strip()
                     status = str(upd.get("status") or "").strip()
-                else:
-                    status = ""
-                reasoning[item_name] = note or (f"Updated to {status} based on the reported inspection detail." if status else "Updated based on the reported inspection detail.")
+
+                reasoning[item_name] = _fallback_reason(item_name, status, note, transcript_text)
+
         result["update_reasoning"] = reasoning
 
         #apply updates to checklist JSON
