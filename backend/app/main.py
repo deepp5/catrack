@@ -19,6 +19,7 @@ class AnalyzeRequest(BaseModel):
     inspection_id: str
     user_text: str
     images: Optional[List[str]] = None
+    chat_history: Optional[List[Dict[str, str]]] = None  # [{"role": "user|assistant", "content": "..."}]
 
 class ChecklistUpdate(BaseModel):
     status: Literal["PASS", "MONITOR", "FAIL"]
@@ -137,7 +138,12 @@ def analyze_video_command(req: AnalyzeVideoCommandRequest):
 
 
 
-def run_inspection_logic(user_text: str, current_checklist_state: Dict[str, Status], images: Optional[List[str]] = None):
+def run_inspection_logic(
+    user_text: str,
+    current_checklist_state: Dict[str, Status],
+    images: Optional[List[str]] = None,
+    chat_history: Optional[List[Dict[str, str]]] = None
+):
     canonical_keys = get_flat_checklist_keys()
 
     # Validate incoming checklist keys against canonical checklist
@@ -225,17 +231,34 @@ def run_inspection_logic(user_text: str, current_checklist_state: Dict[str, Stat
                 }
             ]
         )
+        return json.loads(response.output_text)
     else:
-        response = client.responses.create(
+        # Build message list with memory
+        messages = [
+            {"role": "system", "content": instruction_text}
+        ]
+
+        if chat_history:
+            for msg in chat_history[-6:]:  # last 6 messages only
+                if msg.get("role") in ["user", "assistant"]:
+                    messages.append({
+                        "role": msg["role"],
+                        "content": msg["content"]
+                    })
+
+        messages.append({"role": "user", "content": user_text})
+
+        response = client.chat.completions.create(
             model="gpt-4.1-mini",
-            input=instruction_text
+            messages=messages,
+            temperature=0
         )
 
-    return json.loads(response.output_text)
+        return json.loads(response.choices[0].message.content)
 
 @app.post("/analyze")
 def analyze(req: AnalyzeRequest):
-    # 1️⃣ Fetch inspection from DB
+    #Fetch inspection from DB
     resp = (
         supabase.table("inspections")
         .select("id, checklist_json")
@@ -250,19 +273,20 @@ def analyze(req: AnalyzeRequest):
 
     checklist_state = rows[0]["checklist_json"]
 
-    # 2️⃣ Run AI logic
+    #Run AI logic
     result = run_inspection_logic(
-        req.user_text,
-        checklist_state,
-        req.images
+        user_text=req.user_text,
+        current_checklist_state=checklist_state,
+        images=req.images,
+        chat_history=req.chat_history
     )
 
-    # 3️⃣ Apply updates to checklist JSON
+    # Apply updates to checklist JSON
     updates = result.get("checklist_updates", {})
     for item_name, update_data in updates.items():
         checklist_state[item_name] = update_data["status"]
 
-    # 4️⃣ Save updated checklist back to DB
+    #Save updated checklist back to DB
     supabase.table("inspections").update(
         {"checklist_json": checklist_state}
     ).eq("id", req.inspection_id).execute()
