@@ -80,14 +80,14 @@ struct AssistCaptureView: View {
     private func handleHotwordState(_ newState: HotwordManager.ListenState) {
         switch newState {
         case .idle:
-            // Only clear overlay if we are NOT in guided mode
-            if !isWorking {
-                if case .free = assistState {
-                    showOverlay = false
-                    overlayTranscript = ""
-                    overlayResult = ""
-                }
-            }
+            // Only clear overlay when we're truly idle in free mode.
+            // (During wake-word transitions the recognizer may briefly go idle.)
+            guard !isWorking else { return }
+            guard case .free = assistState else { return }
+
+            showOverlay = false
+            overlayTranscript = ""
+            overlayResult = ""
         case .triggered:
             showOverlay = true
             overlayPhase = .listening
@@ -95,6 +95,14 @@ struct AssistCaptureView: View {
             overlayResult = ""
         case .finalCommand(let cmd):
             print("🔥 FINAL COMMAND RECEIVED:", cmd)
+
+            // Lock UI immediately so an `.idle` transition can't clear the overlay
+            showOverlay = true
+            overlayPhase = .heard
+            overlayTranscript = cmd
+            overlayResult = ""
+            isWorking = true
+
             Task { await runCommand(cmd) }
         case .error(let msg):
             showOverlay = true
@@ -106,8 +114,8 @@ struct AssistCaptureView: View {
     // MARK: - Run Command
 
     private func runCommand(_ cmd: String) async {
-        guard !isWorking else { return }
-        isWorking = true
+        // `isWorking` is set immediately when we receive `.finalCommand` to prevent
+        // an `.idle` transition from hiding the overlay.
 
         // Normalize command
         let lower = cmd.lowercased()
