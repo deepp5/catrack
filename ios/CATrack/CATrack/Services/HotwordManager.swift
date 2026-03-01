@@ -24,18 +24,24 @@ final class HotwordManager: ObservableObject {
     private var lastNonEmptyTime = Date()
     private var silenceTimer: Timer?
 
-    // Tracks whether we temporarily paused for a camera snapshot
     private(set) var isPaused = false
 
     private init() {}
 
     func requestPermissions() async throws {
-        let mic = await withCheckedContinuation { (cont: CheckedContinuation<Bool, Never>) in
-            AVAudioSession.sharedInstance().requestRecordPermission { granted in
-                cont.resume(returning: granted)
+        // Fix: requestRecordPermission() deprecated in iOS 17 — use AVAudioApplication
+        let micGranted: Bool
+        if #available(iOS 17.0, *) {
+            micGranted = await AVAudioApplication.requestRecordPermission()
+        } else {
+            micGranted = await withCheckedContinuation { (cont: CheckedContinuation<Bool, Never>) in
+                AVAudioSession.sharedInstance().requestRecordPermission { granted in
+                    cont.resume(returning: granted)
+                }
             }
         }
-        if !mic {
+
+        if !micGranted {
             throw NSError(domain: "Hotword", code: 1, userInfo: [NSLocalizedDescriptionKey: "Mic permission denied"])
         }
 
@@ -72,7 +78,6 @@ final class HotwordManager: ObservableObject {
         guard isListening, isPaused else { return }
         isPaused = false
 
-        // Clear state so user can issue another command fresh
         isTriggered = false
         startedAtTrigger = false
         commandBuffer = ""
@@ -126,7 +131,6 @@ final class HotwordManager: ObservableObject {
 
             if let error {
                 Task { @MainActor in
-                    // Speech recognizer auto-times out ~1min — restart silently if still active
                     guard self.isListening, !self.isPaused else { return }
                     print("Speech task ended, restarting:", error.localizedDescription)
                     try? self.startAudioEngine()
@@ -187,27 +191,18 @@ final class HotwordManager: ObservableObject {
         silenceTimer?.invalidate()
         silenceTimer = Timer.scheduledTimer(withTimeInterval: 0.25, repeats: true) { [weak self] _ in
             guard let self else { return }
-            Task { @MainActor in
-                self.checkForEndOfSpeech()
-            }
+            Task { @MainActor in self.checkForEndOfSpeech() }
         }
     }
 
     private func checkForEndOfSpeech() {
         guard isTriggered else { return }
 
-        // 1.8s gives enough time to finish speaking after "hey cat"
         if Date().timeIntervalSince(lastNonEmptyTime) > 1.8 {
             let final = commandBuffer.trimmingCharacters(in: .whitespacesAndNewlines)
 
-            // Only fire if we actually captured a command — ignore bare wake word with nothing after
             if !final.isEmpty {
                 confirmedCommand = final
-            } else {
-                // Just reset, keep listening — don't crash or fire empty command
-                isTriggered = false
-                startedAtTrigger = false
-                commandBuffer = ""
             }
 
             isTriggered = false

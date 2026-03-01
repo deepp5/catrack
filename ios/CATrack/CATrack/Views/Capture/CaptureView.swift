@@ -43,7 +43,10 @@ struct CaptureView: View {
         }
         .onAppear {
             camera.start()
+            // Wait for AVCaptureSession to be fully running before starting hotword audio session
+            // This prevents the -50 / -19224 audio session conflict
             Task {
+                await waitForSessionReady()
                 do {
                     try await hotword.requestPermissions()
                     try hotword.start()
@@ -62,6 +65,16 @@ struct CaptureView: View {
             lastHandledCommand = cmd
             Task { await handleCommand(cmd) }
         }
+    }
+
+    /// Poll until AVCaptureSession is running — max 3 seconds
+    private func waitForSessionReady() async {
+        let deadline = Date().addingTimeInterval(3.0)
+        while !camera.isSessionReady && Date() < deadline {
+            try? await Task.sleep(nanoseconds: 100_000_000) // 0.1s
+        }
+        // Extra buffer so audio hardware fully settles
+        try? await Task.sleep(nanoseconds: 200_000_000) // 0.2s
     }
 
     private var bottomBar: some View {
@@ -162,23 +175,19 @@ struct CaptureView: View {
         isSending = true
         defer {
             isSending = false
-            // Reset so the same command can fire again next time
             lastHandledCommand = nil
-            // Resume hotword listening AFTER snapshot + API call are done
             hotword.resume()
         }
 
-        // 1) Pause hotword FIRST so its audio session doesn't conflict with AVCaptureSession
+        // Pause hotword FIRST — releases audio session so AVCaptureSession can use it
         hotword.pause()
 
-        // Small delay to let AVAudioSession fully release before camera captures
-        try? await Task.sleep(nanoseconds: 150_000_000) // 0.15s
+        // Let audio session fully release before capture
+        try? await Task.sleep(nanoseconds: 200_000_000) // 0.2s
 
-        // 2) Snapshot
         guard let jpeg = await camera.captureJPEG() else { return }
         let base64 = jpeg.base64EncodedString()
 
-        // 3) Build checklist state
         let sections = sheetVM.sectionsFor(machineId)
         var currentChecklistState: [String: String] = [:]
         for sec in sections {
@@ -187,7 +196,6 @@ struct CaptureView: View {
             }
         }
 
-        // 4) Call backend
         do {
             let resp = try await APIService.shared.analyzeVideoCommand(
                 userText: cmd,
