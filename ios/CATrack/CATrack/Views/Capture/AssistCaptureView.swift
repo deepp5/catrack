@@ -80,10 +80,13 @@ struct AssistCaptureView: View {
     private func handleHotwordState(_ newState: HotwordManager.ListenState) {
         switch newState {
         case .idle:
+            // Only clear overlay if we are NOT in guided mode
             if !isWorking {
-                showOverlay = false
-                overlayTranscript = ""
-                overlayResult = ""
+                if case .free = assistState {
+                    showOverlay = false
+                    overlayTranscript = ""
+                    overlayResult = ""
+                }
             }
         case .triggered:
             showOverlay = true
