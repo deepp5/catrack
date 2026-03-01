@@ -25,11 +25,34 @@ struct GlassHotwordOverlay: View {
 
     private var iconColor: Color {
         switch phase {
-        case .listening:  return .catYellow
-        case .heard:      return .catYellow
-        case .analyzing:  return .catYellow
-        case .done:       return .severityPass
-        case .error:      return .severityFail
+        case .listening:
+            return .catYellow
+
+        case .heard:
+            return .catYellow
+
+        case .analyzing:
+            return .catYellow
+
+        case .done:
+            let lower = result.lowercased()
+
+            if lower.contains("fail") {
+                return .severityFail
+            }
+
+            if lower.contains("monitor") {
+                return .severityMon
+            }
+
+            if lower.contains("pass") {
+                return .severityPass
+            }
+
+            return .severityPass
+
+        case .error:
+            return .severityFail
         }
     }
 
