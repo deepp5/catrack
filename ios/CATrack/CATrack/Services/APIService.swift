@@ -175,6 +175,32 @@ class APIService {
         let decoded = try decoder.decode(StartResponse.self, from: data)
         return decoded.id
     }
+    
+    func syncChecklist(inspectionId: String,
+                       checklist: [String: String]) async throws {
+
+        guard let url = URL(string: "\(baseURL)/sync-checklist") else {
+            throw URLError(.badURL)
+        }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+
+        let body: [String: Any] = [
+            "inspection_id": inspectionId,
+            "checklist": checklist
+        ]
+
+        request.httpBody = try JSONSerialization.data(withJSONObject: body)
+
+        let (_, response) = try await URLSession.shared.data(for: request)
+
+        guard let http = response as? HTTPURLResponse,
+              (200...299).contains(http.statusCode) else {
+            throw URLError(.badServerResponse)
+        }
+    }
 
     // MARK: - Generate Report
 

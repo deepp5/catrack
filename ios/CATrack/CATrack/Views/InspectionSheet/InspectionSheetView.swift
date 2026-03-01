@@ -109,6 +109,19 @@ struct InspectionSheetView: View {
 
         Task {
             do {
+                //Flatten current sheet state into backend checklist format
+                let flatChecklist: [String: String] = sections.reduce(into: [:]) { result, section in
+                    for field in section.fields {
+                        result[field.label] = field.status.rawValue
+                    }
+                }
+
+                //Sync latest manual updates to backend before generating report
+                try await APIService.shared.syncChecklist(
+                    inspectionId: inspectionId,
+                    checklist: flatChecklist
+                )
+
                 // Calls FastAPI /generate-report
                 let report = try await APIService.shared.generateReport(inspectionId: inspectionId)
                 await MainActor.run {

@@ -25,6 +25,10 @@ class ChecklistUpdate(BaseModel):
     status: Literal["PASS", "MONITOR", "FAIL"]
     note: Optional[str] = None
 
+class SyncChecklistRequest(BaseModel):
+    inspection_id: str
+    checklist: Dict[str, str]
+
 
 class AnalyzeResponse(BaseModel):
     intent: Literal["inspection_update", "knowledge_question", "unclear_input"]
@@ -322,7 +326,26 @@ def debug_next_media():
         return {"message": "no uploaded audio found"}
     return rows[0]
 
+@app.post("/sync-checklist")
+def sync_checklist(req: SyncChecklistRequest):
+    # Validate inspection exists
+    resp = (
+        supabase.table("inspections")
+        .select("id")
+        .eq("id", req.inspection_id)
+        .limit(1)
+        .execute()
+    )
 
+    if not resp.data:
+        raise HTTPException(status_code=404, detail="Inspection not found")
+
+    # Update checklist_json directly
+    supabase.table("inspections").update(
+        {"checklist_json": req.checklist}
+    ).eq("id", req.inspection_id).execute()
+
+    return {"status": "ok"}
 
 @app.get("/debug/download/{media_id}")
 def debug_download(media_id: str):
