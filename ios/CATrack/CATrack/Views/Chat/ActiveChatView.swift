@@ -15,7 +15,7 @@ class KeyboardHeightObserver: ObservableObject {
             name: UIResponder.keyboardWillHideNotification, object: nil
         )
     }
-
+    //testing adding to github
     @objc func keyboardWillShow(_ notification: Notification) {
         guard let frame = notification.userInfo?[UIResponder.keyboardFrameEndUserInfoKey] as? CGRect,
               let duration = notification.userInfo?[UIResponder.keyboardAnimationDurationUserInfoKey] as? Double

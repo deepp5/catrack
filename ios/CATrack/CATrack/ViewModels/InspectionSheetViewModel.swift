@@ -16,7 +16,7 @@ class InspectionSheetViewModel: ObservableObject {
         var sheetsByMachine: [String: [SheetSection]]
         var activeMachineId: UUID?
     }
-
+    //testing adding to github
     init() { load() }
 
     var activeSections: [SheetSection] {

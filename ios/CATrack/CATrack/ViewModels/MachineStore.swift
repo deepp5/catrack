@@ -17,7 +17,7 @@ class MachineStore: ObservableObject {
         var activeMachineId: UUID?
         var activeChatMachine: Machine?
     }
-
+    //testing adding to github
     init() { load() }
 
     var activeMachine: Machine? {

@@ -17,7 +17,7 @@ struct MessageBubbleView: View {
         }
     }
 }
-
+//testing adding to github
 // MARK: - SystemMessageView
 struct SystemMessageView: View {
     let message: Message

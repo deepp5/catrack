@@ -13,7 +13,7 @@ class ChatViewModel: ObservableObject {
     @Published var activeInspectionIds: [UUID: String] = [:] {
         didSet { persistInspectionIds() }
     }
-
+    //testing adding to github
     private let sessionsKey      = "catrack.chat.sessions"
     private let inspectionIdsKey = "catrack.chat.inspectionIds"
 
