@@ -91,7 +91,21 @@ class ChatViewModel: ObservableObject {
             var currentChecklistState: [String: String] = [:]
             for section in sections {
                 for field in section.fields {
-                    currentChecklistState[field.label] = field.status.rawValue
+
+                    let backendValue: String
+
+                    switch field.status {
+                    case .pass:
+                        backendValue = "PASS"
+                    case .monitor:
+                        backendValue = "MONITOR"
+                    case .fail:
+                        backendValue = "FAIL"
+                    case .pending:
+                        backendValue = "none"
+                    }
+
+                    currentChecklistState[field.label] = backendValue
                 }
             }
 
