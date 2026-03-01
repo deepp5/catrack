@@ -91,7 +91,7 @@ class ChatViewModel: ObservableObject {
             var currentChecklistState: [String: String] = [:]
             for section in sections {
                 for field in section.fields {
-                    currentChecklistState[field.id] = field.status.rawValue
+                    currentChecklistState[field.label] = field.status.rawValue
                 }
             }
 
@@ -182,7 +182,7 @@ class ChatViewModel: ObservableObject {
 
     private func findFieldByBackendKey(_ key: String, in sections: [SheetSection]) -> (sectionId: String, fieldId: String)? {
         for sec in sections {
-            if let f = sec.fields.first(where: { $0.id == key }) {
+            if let f = sec.fields.first(where: { $0.label == key }) {
                 return (sec.id, f.id)
             }
         }
