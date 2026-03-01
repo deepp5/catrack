@@ -11,6 +11,7 @@ struct ActiveChatView: View {
     @State private var showCamera = false
     @State private var showVoice = false
     @State private var showDocs = false
+    @State private var showAssist = false
     @FocusState private var inputFocused: Bool
 
     var messages: [Message] {
@@ -22,7 +23,8 @@ struct ActiveChatView: View {
             Color.appBackground.ignoresSafeArea()
 
             VStack(spacing: 0) {
-                MachineContextBar(machine: machine)
+                // Pass showAssist binding so the button lives inside the context bar
+                MachineContextBar(machine: machine, onAssist: { showAssist = true })
 
                 ScrollViewReader { proxy in
                     ScrollView {
@@ -64,9 +66,11 @@ struct ActiveChatView: View {
                 .focused($inputFocused)
             }
         }
-        .navigationTitle(machine.model)
-        .navigationBarTitleDisplayMode(.inline)
-        .tint(.catYellow)
+        .fullScreenCover(isPresented: $showAssist) {
+            AssistCaptureView(machine: machine)
+                .environmentObject(chatVM)
+                .environmentObject(sheetVM)
+        }
         .sheet(isPresented: $showCamera) {
             CaptureView(machineId: machine.id)
                 .environmentObject(chatVM)
@@ -97,6 +101,7 @@ struct ActiveChatView: View {
 // MARK: - MachineContextBar
 struct MachineContextBar: View {
     let machine: Machine
+    var onAssist: (() -> Void)? = nil
 
     var body: some View {
         HStack(spacing: 10) {
@@ -117,6 +122,16 @@ struct MachineContextBar: View {
 
             if let status = machine.overallStatus {
                 SeverityBadge(severity: status)
+            }
+
+            // Assist button — only shown when onAssist is provided
+            if let onAssist {
+                Button(action: onAssist) {
+                    Image(systemName: "waveform.circle.fill")
+                        .font(.system(size: 22, weight: .semibold))
+                        .foregroundStyle(Color.catYellow)
+                }
+                .buttonStyle(.plain)
             }
         }
         .padding(.horizontal, 16)
@@ -157,9 +172,7 @@ struct TypingIndicatorView: View {
             Spacer()
         }
         .onAppear {
-            for i in 0..<3 {
-                dotOpacity[i] = 0.9
-            }
+            for i in 0..<3 { dotOpacity[i] = 0.9 }
         }
     }
 }

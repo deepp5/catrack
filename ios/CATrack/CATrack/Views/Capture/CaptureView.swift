@@ -15,9 +15,6 @@ struct CaptureView: View {
 
     @StateObject private var camera = CameraController()
     @State private var mode: CaptureMode = .photo
-    @StateObject private var hotword = HotwordManager.shared
-
-    @State private var lastHandledCommand: String? = nil
     @State private var isSending: Bool = false
 
     var body: some View {
@@ -26,59 +23,19 @@ struct CaptureView: View {
                 .ignoresSafeArea()
 
             VStack {
-                if hotword.isTriggered {
-                    GlassHotwordOverlay(state: .listening)
-                } else if let cmd = hotword.confirmedCommand {
-                    GlassHotwordOverlay(state: .captured(cmd))
-                } else if isSending {
-                    GlassHotwordOverlay(state: .processing)
-                }
-                Spacer()
-            }
-
-            VStack {
                 Spacer()
                 bottomBar
             }
         }
-        .onAppear {
-            camera.start()
-            // Wait for AVCaptureSession to be fully running before starting hotword audio session
-            // This prevents the -50 / -19224 audio session conflict
-            Task {
-                await waitForSessionReady()
-                do {
-                    try await hotword.requestPermissions()
-                    try hotword.start()
-                } catch {
-                    print("Hotword error:", error)
-                }
-            }
-        }
-        .onDisappear {
-            camera.stop()
-            hotword.stop()
-        }
-        .onChange(of: hotword.confirmedCommand) { _, newValue in
-            guard let cmd = newValue, !cmd.isEmpty else { return }
-            if lastHandledCommand == cmd { return }
-            lastHandledCommand = cmd
-            Task { await handleCommand(cmd) }
-        }
+        .onAppear { camera.start() }
+        .onDisappear { camera.stop() }
     }
 
-    /// Poll until AVCaptureSession is running — max 3 seconds
-    private func waitForSessionReady() async {
-        let deadline = Date().addingTimeInterval(3.0)
-        while !camera.isSessionReady && Date() < deadline {
-            try? await Task.sleep(nanoseconds: 100_000_000) // 0.1s
-        }
-        // Extra buffer so audio hardware fully settles
-        try? await Task.sleep(nanoseconds: 200_000_000) // 0.2s
-    }
+    // MARK: - Bottom Bar
 
     private var bottomBar: some View {
         VStack(spacing: 14) {
+            // Mode selector
             HStack(spacing: 18) {
                 ForEach(CaptureMode.allCases, id: \.self) { m in
                     Text(m.rawValue)
@@ -105,6 +62,7 @@ struct CaptureView: View {
 
                 Spacer()
 
+                // Shutter / Record button
                 Button {
                     Task {
                         if mode == .photo {
@@ -147,6 +105,8 @@ struct CaptureView: View {
         )
     }
 
+    // MARK: - Capture Actions
+
     private func toggleVideoRecording() async {
         if camera.isRecording {
             if let url = await camera.stopRecording() {
@@ -168,66 +128,5 @@ struct CaptureView: View {
         let media = AttachedMedia(type: .image, filename: "photo.jpg", thumbnailData: data)
         chatVM.attachMedia(media)
         dismiss()
-    }
-
-    private func handleCommand(_ cmd: String) async {
-        guard !isSending else { return }
-        isSending = true
-        defer {
-            isSending = false
-            lastHandledCommand = nil
-            hotword.resume()
-        }
-
-        // Pause hotword FIRST — releases audio session so AVCaptureSession can use it
-        hotword.pause()
-
-        // Let audio session fully release before capture
-        try? await Task.sleep(nanoseconds: 200_000_000) // 0.2s
-
-        guard let jpeg = await camera.captureJPEG() else { return }
-        let base64 = jpeg.base64EncodedString()
-
-        let sections = sheetVM.sectionsFor(machineId)
-        var currentChecklistState: [String: String] = [:]
-        for sec in sections {
-            for field in sec.fields {
-                currentChecklistState[field.id] = field.status.rawValue
-            }
-        }
-
-        do {
-            let resp = try await APIService.shared.analyzeVideoCommand(
-                userText: cmd,
-                currentChecklistState: currentChecklistState,
-                framesBase64: [base64]
-            )
-
-            var sheetUpdates: [SheetUpdate] = []
-            for (backendKey, upd) in resp.checklistUpdates {
-                guard let sev = FindingSeverity(rawValue: upd.status) else { continue }
-                guard let hit = findFieldByBackendKey(backendKey, in: sections) else { continue }
-                sheetUpdates.append(SheetUpdate(
-                    sheetSection: hit.sectionId,
-                    fieldId: hit.fieldId,
-                    value: sev,
-                    evidenceMediaId: nil
-                ))
-            }
-            if !sheetUpdates.isEmpty {
-                sheetVM.applyUpdates(sheetUpdates, for: machineId)
-            }
-        } catch {
-            print("analyzeVideoCommand error:", error)
-        }
-    }
-
-    private func findFieldByBackendKey(_ key: String, in sections: [SheetSection]) -> (sectionId: String, fieldId: String)? {
-        for sec in sections {
-            if let f = sec.fields.first(where: { $0.id == key }) {
-                return (sec.id, f.id)
-            }
-        }
-        return nil
     }
 }

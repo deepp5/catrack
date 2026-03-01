@@ -1,92 +1,201 @@
+//import SwiftUI
+//
+//struct GlassHotwordOverlay: View {
+//    enum Phase: Equatable {
+//        case listening
+//        case heard
+//        case analyzing
+//        case done
+//        case error
+//    }
+//
+//    let phase: Phase
+//    let transcript: String
+//    let result: String
+//    let isOn: Bool
+//
+//    private var icon: String {
+//        switch phase {
+//        case .listening: return "waveform"
+//        case .heard:     return "quote.bubble"
+//        case .analyzing: return "sparkles"
+//        case .done:      return "checkmark.circle.fill"
+//        case .error:     return "exclamationmark.triangle.fill"
+//        }
+//    }
+//
+//    private var iconColor: Color {
+//        switch phase {
+//        case .listening: return .catYellow
+//        case .heard:     return .catYellow
+//        case .analyzing: return .catYellow
+//        case .done:      return .severityPass
+//        case .error:     return .severityFail
+//        }
+//    }
+//
+//    private var title: String {
+//        switch phase {
+//        case .listening: return "CAT is listening…"
+//        case .heard:     return "Heard"
+//        case .analyzing: return "Analyzing…"
+//        case .done:      return "Done"
+//        case .error:     return "Error"
+//        }
+//    }
+//
+//    var body: some View {
+//        HStack(alignment: .top, spacing: 10) {
+//            Image(systemName: icon)
+//                .font(.system(size: 14, weight: .semibold))
+//                .foregroundStyle(iconColor)
+//                .frame(width: 18)
+//                .symbolEffect(.pulse, isActive: phase == .listening || phase == .analyzing)
+//
+//            VStack(alignment: .leading, spacing: 4) {
+//                // Row 1: status + ON badge
+//                HStack(spacing: 6) {
+//                    Text(title)
+//                        .font(.dmMono(11, weight: .semibold))
+//                        .foregroundStyle(.white)
+//
+//                    Spacer(minLength: 6)
+//
+//                    Text(isOn ? "ON" : "OFF")
+//                        .font(.dmMono(10, weight: .medium))
+//                        .foregroundStyle(isOn ? Color.catYellow : Color.appMuted)
+//                        .padding(.horizontal, 6)
+//                        .padding(.vertical, 2)
+//                        .background(Color.white.opacity(0.06))
+//                        .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+//                }
+//
+//                // Row 2: transcript
+//                if !transcript.isEmpty {
+//                    Text("\(transcript)")
+//                        .font(.barlow(12, weight: .medium))
+//                        .foregroundStyle(Color.white.opacity(0.92))
+//                        .lineLimit(1)
+//                }
+//
+//                // Row 3: result
+//                if !result.isEmpty {
+//                    Text(result)
+//                        .font(.barlow(12))
+//                        .foregroundStyle(Color.appMuted)
+//                        .lineLimit(2)
+//                }
+//            }
+//        }
+//        .padding(.horizontal, 12)
+//        .padding(.vertical, 10)
+//        .frame(maxWidth: 340, alignment: .leading)
+//        .background(
+//            RoundedRectangle(cornerRadius: 14, style: .continuous)
+//                .fill(.ultraThinMaterial)
+//                .overlay(
+//                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+//                        .stroke(Color.white.opacity(0.12), lineWidth: 1)
+//                )
+//        )
+//        .shadow(radius: 12)
+//        .transition(.move(edge: .top).combined(with: .opacity))
+//        .animation(.spring(response: 0.3), value: phase)
+//        .animation(.spring(response: 0.3), value: result)
+//    }
+//}
+
+
 import SwiftUI
 
-enum HotwordOverlayState {
-    case listening
-    case captured(String)
-    case processing
-}
-
 struct GlassHotwordOverlay: View {
-    let state: HotwordOverlayState
+    enum Phase: Equatable {
+        case listening   // wake word heard, collecting command
+        case heard       // command captured, about to analyze
+        case analyzing   // waiting on backend
+        case done        // result ready
+        case error       // something went wrong
+    }
+
+    let phase: Phase
+    let transcript: String   // what the user said
+    let result: String       // AI response / update summary
 
     private var icon: String {
-        switch state {
-        case .listening:   return "waveform"
-        case .captured:    return "cat.fill"
-        case .processing:  return "gearshape.fill"
+        switch phase {
+        case .listening:  return "waveform"
+        case .heard:      return "quote.bubble"
+        case .analyzing:  return "sparkles"
+        case .done:       return "checkmark.circle.fill"
+        case .error:      return "exclamationmark.triangle.fill"
         }
     }
 
     private var iconColor: Color {
-        switch state {
-        case .listening:   return .catYellow
-        case .captured:    return .catYellow
-        case .processing:  return .appMuted
+        switch phase {
+        case .listening:  return .catYellow
+        case .heard:      return .catYellow
+        case .analyzing:  return .catYellow
+        case .done:       return .severityPass
+        case .error:      return .severityFail
         }
     }
 
-    private var headline: String {
-        switch state {
-        case .listening:            return "CAT is listening…"
-        case .captured(let cmd):    return "\"\(cmd)\""
-        case .processing:           return "On it…"
-        }
-    }
-
-    private var subline: String {
-        switch state {
-        case .listening:   return "Speak your command after the wake word."
-        case .captured:    return "Command received. Capturing frame."
-        case .processing:  return "Analyzing with CAT AI."
+    private var title: String {
+        switch phase {
+        case .listening:  return "CAT is listening…"
+        case .heard:      return "Heard"
+        case .analyzing:  return "Analyzing…"
+        case .done:       return "Done"
+        case .error:      return "Error"
         }
     }
 
     var body: some View {
-        VStack(spacing: 10) {
-            HStack(spacing: 10) {
-                Image(systemName: icon)
-                    .font(.system(size: 17, weight: .semibold))
-                    .foregroundStyle(iconColor)
-                    .symbolEffect(.pulse, isActive: state == .listening || state == .processing)
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: icon)
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundStyle(iconColor)
+                .frame(width: 18)
+                .symbolEffect(.pulse, isActive: phase == .listening || phase == .analyzing)
 
-                Text(headline)
-                    .font(.barlow(14, weight: .semibold))
+            VStack(alignment: .leading, spacing: 4) {
+                // Status row
+                Text(title)
+                    .font(.dmMono(11, weight: .semibold))
                     .foregroundStyle(.white)
-                    .lineLimit(2)
 
-                Spacer()
+                // Transcript row
+                if !transcript.isEmpty {
+                    Text("\(transcript)")
+                        .font(.barlow(12, weight: .medium))
+                        .foregroundStyle(Color.white.opacity(0.92))
+                        .lineLimit(1)
+                }
+
+                // Result row
+                if !result.isEmpty {
+                    Text(result)
+                        .font(.barlow(12))
+                        .foregroundStyle(Color.appMuted)
+                        .lineLimit(2)
+                }
             }
-
-            Text(subline)
-                .font(.dmMono(11))
-                .foregroundStyle(Color.appMuted)
-                .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .padding(14)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
+        .frame(maxWidth: 340, alignment: .leading)
         .background(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
                 .fill(.ultraThinMaterial)
                 .overlay(
-                    RoundedRectangle(cornerRadius: 16, style: .continuous)
-                        .stroke(Color.catYellow.opacity(0.18), lineWidth: 1)
+                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                        .stroke(Color.white.opacity(0.12), lineWidth: 1)
                 )
         )
         .shadow(radius: 12)
-        .padding(.horizontal, 14)
-        .padding(.top, 14)
         .transition(.move(edge: .top).combined(with: .opacity))
-        .animation(.spring(response: 0.3), value: headline)
-    }
-}
-
-// Make listening state equatable for symbolEffect
-extension HotwordOverlayState: Equatable {
-    static func == (lhs: HotwordOverlayState, rhs: HotwordOverlayState) -> Bool {
-        switch (lhs, rhs) {
-        case (.listening, .listening): return true
-        case (.processing, .processing): return true
-        case (.captured(let a), .captured(let b)): return a == b
-        default: return false
-        }
+        .animation(.spring(response: 0.3), value: phase)
+        .animation(.spring(response: 0.3), value: result)
     }
 }

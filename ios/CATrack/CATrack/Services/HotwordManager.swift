@@ -1,213 +1,213 @@
 import Foundation
-import AVFoundation
 import Speech
+import AVFoundation
 import Combine
 
 @MainActor
 final class HotwordManager: ObservableObject {
+
+    enum ListenState: Equatable {
+        case idle
+        case triggered
+        case finalCommand(String)
+        case error(String)
+    }
+
     static let shared = HotwordManager()
 
-    @Published var isListening = false
-    @Published var isTriggered = false
-    @Published var liveCaption: String = ""
-    @Published var confirmedCommand: String? = nil
+    @Published var state: ListenState = .idle
 
-    private let recognizer = SFSpeechRecognizer(locale: Locale(identifier: "en_US"))
     private let audioEngine = AVAudioEngine()
+    private var recognitionRequest: SFSpeechAudioBufferRecognitionRequest?
+    private var recognitionTask: SFSpeechRecognitionTask?
+    private let recognizer = SFSpeechRecognizer(locale: Locale(identifier: "en_US"))
 
-    private var request: SFSpeechAudioBufferRecognitionRequest?
-    private var task: SFSpeechRecognitionTask?
-
-    private var startedAtTrigger = false
+    private var hasTriggered = false
     private var commandBuffer = ""
-
-    private var lastNonEmptyTime = Date()
     private var silenceTimer: Timer?
-
-    private(set) var isPaused = false
+    private var lastUpdateTime = Date()
 
     private init() {}
 
+    // MARK: - Permissions
+
     func requestPermissions() async throws {
-        // Fix: requestRecordPermission() deprecated in iOS 17 — use AVAudioApplication
         let micGranted: Bool
         if #available(iOS 17.0, *) {
             micGranted = await AVAudioApplication.requestRecordPermission()
         } else {
             micGranted = await withCheckedContinuation { (cont: CheckedContinuation<Bool, Never>) in
-                AVAudioSession.sharedInstance().requestRecordPermission { granted in
-                    cont.resume(returning: granted)
-                }
+                AVAudioSession.sharedInstance().requestRecordPermission { ok in cont.resume(returning: ok) }
             }
         }
-
-        if !micGranted {
-            throw NSError(domain: "Hotword", code: 1, userInfo: [NSLocalizedDescriptionKey: "Mic permission denied"])
+        guard micGranted else {
+            throw NSError(domain: "Hotword", code: 1, userInfo: [NSLocalizedDescriptionKey: "Microphone permission denied"])
         }
 
-        let speechAuth = await withCheckedContinuation { (cont: CheckedContinuation<SFSpeechRecognizerAuthorizationStatus, Never>) in
+        let speechStatus = await withCheckedContinuation { (cont: CheckedContinuation<SFSpeechRecognizerAuthorizationStatus, Never>) in
             SFSpeechRecognizer.requestAuthorization { status in cont.resume(returning: status) }
         }
-        if speechAuth != .authorized {
-            throw NSError(domain: "Hotword", code: 2, userInfo: [NSLocalizedDescriptionKey: "Speech permission denied"])
+        guard speechStatus == .authorized else {
+            throw NSError(domain: "Hotword", code: 2, userInfo: [NSLocalizedDescriptionKey: "Speech recognition permission denied"])
         }
     }
 
-    /// Call BEFORE taking a camera snapshot — releases audio session so AVCaptureSession can use it
-    func pause() {
-        guard isListening, !isPaused else { return }
-        isPaused = true
-
-        silenceTimer?.invalidate()
-        silenceTimer = nil
-
-        task?.cancel()
-        task = nil
-
-        request?.endAudio()
-        request = nil
-
-        audioEngine.stop()
-        audioEngine.inputNode.removeTap(onBus: 0)
-
-        try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
-    }
-
-    /// Call AFTER the camera snapshot is done — resumes listening for the next "Hey Cat"
-    func resume() {
-        guard isListening, isPaused else { return }
-        isPaused = false
-
-        isTriggered = false
-        startedAtTrigger = false
-        commandBuffer = ""
-        confirmedCommand = nil
-        liveCaption = ""
-
-        do {
-            try startAudioEngine()
-        } catch {
-            print("HotwordManager resume error:", error)
-        }
-    }
+    // MARK: - Start / Stop
 
     func start() throws {
-        if isListening { return }
-        isListening = true
-        isPaused = false
-        confirmedCommand = nil
-        isTriggered = false
-        liveCaption = ""
-        startedAtTrigger = false
+        stop()
+
+        hasTriggered = false
         commandBuffer = ""
+        state = .idle
 
-        try startAudioEngine()
-    }
-
-    private func startAudioEngine() throws {
         let session = AVAudioSession.sharedInstance()
-        try session.setCategory(.record, mode: .measurement, options: [.duckOthers, .allowBluetoothA2DP])
+
+        // Key fix: use .playAndRecord with .mixWithOthers so we don't fight AVCaptureSession
+        // over the audio hardware. This lets both coexist on device.
+        try session.setCategory(
+            .playAndRecord,
+            mode: .measurement,
+            options: [.mixWithOthers, .allowBluetoothA2DP, .defaultToSpeaker]
+        )
         try session.setActive(true, options: .notifyOthersOnDeactivation)
 
-        request = SFSpeechAudioBufferRecognitionRequest()
-        guard let request else {
-            throw NSError(domain: "Hotword", code: 3, userInfo: [NSLocalizedDescriptionKey: "No request"])
+        recognitionRequest = SFSpeechAudioBufferRecognitionRequest()
+        guard let recognitionRequest else {
+            throw NSError(domain: "Hotword", code: 3, userInfo: [NSLocalizedDescriptionKey: "Could not create recognition request"])
         }
-        request.shouldReportPartialResults = true
+        recognitionRequest.shouldReportPartialResults = true
 
-        let input = audioEngine.inputNode
-        let format = input.outputFormat(forBus: 0)
-
-        input.removeTap(onBus: 0)
-        input.installTap(onBus: 0, bufferSize: 1024, format: format) { [weak self] buffer, _ in
-            self?.request?.append(buffer)
+        let inputNode = audioEngine.inputNode
+        let format = inputNode.outputFormat(forBus: 0)
+        inputNode.removeTap(onBus: 0)
+        inputNode.installTap(onBus: 0, bufferSize: 1024, format: format) { [weak self] buffer, _ in
+            self?.recognitionRequest?.append(buffer)
         }
 
         audioEngine.prepare()
         try audioEngine.start()
 
-        task = recognizer?.recognitionTask(with: request) { [weak self] result, error in
+        recognitionTask = recognizer?.recognitionTask(with: recognitionRequest) { [weak self] result, error in
             guard let self else { return }
 
             if let error {
                 Task { @MainActor in
-                    guard self.isListening, !self.isPaused else { return }
-                    print("Speech task ended, restarting:", error.localizedDescription)
-                    try? self.startAudioEngine()
+                    guard self.audioEngine.isRunning else { return }
+                    print("Speech task restarting:", error.localizedDescription)
+                    try? self.start()
                 }
                 return
             }
 
             guard let result else { return }
             let text = result.bestTranscription.formattedString.lowercased()
-            Task { @MainActor in
-                self.liveCaption = text
-                self.handleTranscript(text)
-            }
+            Task { @MainActor in self.processTranscript(text, isFinal: result.isFinal) }
         }
 
         startSilenceTimer()
     }
 
     func stop() {
-        isListening = false
-        isPaused = false
         silenceTimer?.invalidate()
         silenceTimer = nil
 
-        task?.cancel()
-        task = nil
+        recognitionTask?.cancel()
+        recognitionTask = nil
 
-        request?.endAudio()
-        request = nil
+        recognitionRequest?.endAudio()
+        recognitionRequest = nil
 
-        audioEngine.stop()
-        audioEngine.inputNode.removeTap(onBus: 0)
+        if audioEngine.isRunning {
+            audioEngine.stop()
+            audioEngine.inputNode.removeTap(onBus: 0)
+        }
 
-        try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+        // Don't deactivate the session — let AVCaptureSession keep it
+        // try? AVAudioSession.sharedInstance().setActive(false) ← removed intentionally
+
+        hasTriggered = false
+        commandBuffer = ""
+        state = .idle
     }
 
-    private func handleTranscript(_ text: String) {
-        if !isTriggered, text.contains("hey cat") {
-            isTriggered = true
-            startedAtTrigger = true
-            commandBuffer = ""
-            lastNonEmptyTime = Date()
+    /// Pause speech engine before camera snapshot (releases mic tap briefly)
+    func pauseAudio() {
+        silenceTimer?.invalidate()
+        silenceTimer = nil
+
+        recognitionTask?.cancel()
+        recognitionTask = nil
+
+        recognitionRequest?.endAudio()
+        recognitionRequest = nil
+
+        if audioEngine.isRunning {
+            audioEngine.stop()
+            audioEngine.inputNode.removeTap(onBus: 0)
+        }
+        // Don't touch AVAudioSession — let camera keep it
+    }
+
+    /// Resume after camera snapshot — resets for next command
+    func resumeAfterCapture() {
+        hasTriggered = false
+        commandBuffer = ""
+        state = .idle
+        do {
+            try start()
+        } catch {
+            state = .error(error.localizedDescription)
+        }
+    }
+
+    // MARK: - Transcript
+
+    private func processTranscript(_ text: String, isFinal: Bool) {
+        if !hasTriggered {
+            if text.contains("hey cat") {
+                hasTriggered = true
+                commandBuffer = ""
+                lastUpdateTime = Date()
+                state = .triggered
+            }
             return
         }
 
-        if isTriggered && startedAtTrigger {
-            if let range = text.range(of: "hey cat", options: .backwards) {
-                let after = text[range.upperBound...].trimmingCharacters(in: .whitespacesAndNewlines)
-                if !after.isEmpty {
-                    commandBuffer = after
-                    lastNonEmptyTime = Date()
-                }
+        if let range = text.range(of: "hey cat", options: .backwards) {
+            let after = text[range.upperBound...].trimmingCharacters(in: .whitespacesAndNewlines)
+            if !after.isEmpty {
+                commandBuffer = after
+                lastUpdateTime = Date()
             }
         }
+
+        if isFinal { emitCommand() }
+    }
+
+    private func emitCommand() {
+        let cmd = commandBuffer.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !cmd.isEmpty else {
+            hasTriggered = false
+            commandBuffer = ""
+            state = .idle
+            return
+        }
+        state = .finalCommand(cmd)
+        hasTriggered = false
+        commandBuffer = ""
     }
 
     private func startSilenceTimer() {
         silenceTimer?.invalidate()
-        silenceTimer = Timer.scheduledTimer(withTimeInterval: 0.25, repeats: true) { [weak self] _ in
+        silenceTimer = Timer.scheduledTimer(withTimeInterval: 0.3, repeats: true) { [weak self] _ in
             guard let self else { return }
-            Task { @MainActor in self.checkForEndOfSpeech() }
+            Task { @MainActor in self.checkSilence() }
         }
     }
 
-    private func checkForEndOfSpeech() {
-        guard isTriggered else { return }
-
-        if Date().timeIntervalSince(lastNonEmptyTime) > 1.8 {
-            let final = commandBuffer.trimmingCharacters(in: .whitespacesAndNewlines)
-
-            if !final.isEmpty {
-                confirmedCommand = final
-            }
-
-            isTriggered = false
-            startedAtTrigger = false
-            commandBuffer = ""
-        }
+    private func checkSilence() {
+        guard hasTriggered, !commandBuffer.isEmpty else { return }
+        if Date().timeIntervalSince(lastUpdateTime) > 1.8 { emitCommand() }
     }
 }
