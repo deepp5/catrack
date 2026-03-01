@@ -39,6 +39,7 @@ class SyncChecklistRequest(BaseModel):
 class AnalyzeResponse(BaseModel):
     intent: Literal["inspection_update", "knowledge_question", "unclear_input"]
     checklist_updates: Dict[str, ChecklistUpdate]
+    update_reasoning: Optional[Dict[str, str]] = None
     risk_score: Optional[Literal["Low", "Moderate", "High"]] = None
     answer: Optional[str] = None
     follow_up_questions: List[str]
@@ -313,17 +314,20 @@ def run_inspection_logic(
     - Assign PASS, MONITOR, or FAIL.
     - Provide short note.
     - Assign risk_score as Low, Moderate, or High.
+    - For every checklist item you update, add a short explanation in update_reasoning explaining WHY that checklist item should be updated.
 
     If knowledge_question:
     - Do NOT modify checklist_updates.
     - risk_score must be null.
     - Provide clear guidance in answer.
+    - update_reasoning must be an empty object.
 
     If unclear_input:
     - Do NOT modify checklist_updates.
     - risk_score must be null.
     - answer must be null.
     - Provide helpful follow_up_questions asking for clarification.
+    - update_reasoning must be an empty object.
 
     Return ONLY valid JSON in this exact format:
     {{
@@ -333,6 +337,9 @@ def run_inspection_logic(
           "status": "PASS | MONITOR | FAIL",
           "note": "string"
         }}
+      }},
+      "update_reasoning": {{
+        "Item Name": "string"
       }},
       "risk_score": "Low | Moderate | High | null",
       "answer": "string | null",
@@ -432,8 +439,25 @@ def analyze(req: AnalyzeRequest):
     result["memory_used"] = bool(memory_hits)
     result["memory_hits"] = memory_hits
 
-    # Apply updates to checklist JSON
+    # Ensure update_reasoning exists (so UI can show what/why)
     updates = result.get("checklist_updates", {})
+    reasoning = result.get("update_reasoning")
+    if not isinstance(reasoning, dict):
+        reasoning = {}
+    if isinstance(updates, dict):
+        for item_name, upd in updates.items():
+            if item_name in reasoning:
+                continue
+            note = ""
+            if isinstance(upd, dict):
+                note = str(upd.get("note") or "").strip()
+                status = str(upd.get("status") or "").strip()
+            else:
+                status = ""
+            reasoning[item_name] = note or (f"Updated to {status} based on the reported inspection detail." if status else "Updated based on the reported inspection detail.")
+    result["update_reasoning"] = reasoning
+
+    # Apply updates to checklist JSON
     for item_name, update_data in updates.items():
         checklist_state[item_name] = update_data["status"]
 
@@ -736,8 +760,25 @@ async def voice_analyze(
         result["memory_used"] = bool(memory_hits)
         result["memory_hits"] = memory_hits
 
-        #apply updates to checklist JSON
+        # Ensure update_reasoning exists (so UI can show what/why)
         updates = result.get("checklist_updates", {})
+        reasoning = result.get("update_reasoning")
+        if not isinstance(reasoning, dict):
+            reasoning = {}
+        if isinstance(updates, dict):
+            for item_name, upd in updates.items():
+                if item_name in reasoning:
+                    continue
+                note = ""
+                if isinstance(upd, dict):
+                    note = str(upd.get("note") or "").strip()
+                    status = str(upd.get("status") or "").strip()
+                else:
+                    status = ""
+                reasoning[item_name] = note or (f"Updated to {status} based on the reported inspection detail." if status else "Updated based on the reported inspection detail.")
+        result["update_reasoning"] = reasoning
+
+        #apply updates to checklist JSON
         for item_name, update_data in updates.items():
             checklist_state[item_name] = update_data["status"]
 
