@@ -228,6 +228,13 @@ struct InspectionPickerView: View {
 
     private let machines: [Machine] = [
         Machine(model: "Wheel Loader 950 GC", serial: "WL950-DEMO", hours: 0, site: "Demo Site"),
+        Machine(model: "Track-Type Tractor D6T", serial: "D6T-DEMO", hours: 120, site: "Demo Site"),
+        Machine(model: "Hydraulic Excavator 320", serial: "EX320-DEMO", hours: 342, site: "North Yard"),
+        Machine(model: "Backhoe Loader 420F", serial: "BH420F-DEMO", hours: 78, site: "South Yard"),
+        Machine(model: "Motor Grader 140", serial: "MG140-DEMO", hours: 415, site: "West Yard"),
+        Machine(model: "Skid Steer Loader 262D", serial: "SSL262D-DEMO", hours: 55, site: "Shop"),
+        Machine(model: "Articulated Truck 730", serial: "AT730-DEMO", hours: 980, site: "Quarry"),
+        Machine(model: "Compact Track Loader 299D", serial: "CTL299D-DEMO", hours: 210, site: "East Yard"),
     ]
 
     @State private var selectedMachine: Machine? = nil
@@ -337,7 +344,7 @@ struct InspectionPickerView: View {
                         .foregroundStyle(Color.catYellow)
                         .font(.system(size: 14))
 
-                    Text(selectedMachine?.model ?? "Select Machine")
+                    Text(selectedMachine?.serial ?? "Select Machine")
                         .font(.system(size: 16, weight: .regular))
                         .foregroundStyle(selectedMachine != nil ? .white : Color.appMuted)
 
@@ -417,10 +424,10 @@ struct InspectionPickerView: View {
             }
 
             VStack(alignment: .leading, spacing: 2) {
-                Text(machine.serial)
+                Text(machine.model)
                     .font(.system(size: 15, weight: .semibold))
                     .foregroundStyle(.white)
-                Text("\(machine.site) • \(machine.hours) hrs")
+                Text("\(machine.serial) • \(machine.site) • \(machine.hours) hrs")
                     .font(.system(size: 12, weight: .regular))
                     .foregroundStyle(Color.appMuted)
             }
