@@ -44,9 +44,7 @@ struct RootView: View {
                     .opacity(showChat ? 1 : 0)
                     .allowsHitTesting(showChat)
                     .safeAreaInset(edge: .bottom) {
-                        // When keyboard is hidden, reserve space for navbar
-                        // When keyboard is visible, no extra space needed
-                        Color.clear.frame(height: keyboardVisible ? 0 : K.navHeight)
+                        Color.clear.frame(height: K.navHeight)
                     }
             }
 

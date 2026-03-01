@@ -168,7 +168,6 @@ struct InspectionSheetView: View {
         }
     }
 
-    private func finalizeInspection() {
     private func finalizeInspection(with report: GenerateReportResponse) {
         guard let machine = machine else { return }
 
@@ -239,82 +238,6 @@ struct InspectionSheetView: View {
         )
     }
 
-    private func severityRank(_ s: FindingSeverity) -> Int {
-        switch s {
-        case .pass:    return 0
-        case .monitor: return 1
-        case .fail:    return 2
-        }
-    }
-
-    private func finalizeInspection() {
-        // If we are generating via AI report, this path is not used.
-        guard let machine = machine else { return }
-
-        let allFindings = sections.flatMap { section in
-            section.fields.compactMap { field -> FindingCard? in
-                guard field.status != .pass else { return nil }
-                return FindingCard(
-                    componentType: field.label,
-                    componentLocation: section.title,
-                    condition: field.note.isEmpty ? field.label : field.note,
-                    severity: field.status,
-                    confidence: 1.0,
-                    quantification: Quantification(
-                        failureProbability: field.status == .fail ? 0.8 : 0.4,
-                        timeToFailure: "N/A",
-                        safetyRisk: field.status == .fail ? 70 : 30,
-                        safetyLabel: field.status == .fail ? "High" : "Moderate",
-                        costLow: 0,
-                        costHigh: 0,
-                        downtimeLow: 0,
-                        downtimeHigh: 0
-                    )
-                )
-            }
-        }
-
-        let allStatuses = sections.map { $0.overallStatus }
-        let overallStatus = allStatuses.max(by: { severityRank($0) < severityRank($1) }) ?? .pass
-
-        // Manual fallback when AI report not used
-        // Compute simple backend-aligned heuristic
-        let failCount = sections.flatMap { $0.fields }.filter { $0.status == .fail }.count
-        let monitorCount = sections.flatMap { $0.fields }.filter { $0.status == .monitor }.count
-        let noneCount = sections.flatMap { $0.fields }.filter { $0.status.rawValue.lowercased() == "none" }.count
-
-        var riskScore = 100
-        riskScore -= failCount * 10
-        riskScore -= monitorCount * 3
-        riskScore -= noneCount * 2
-        riskScore = max(0, min(100, riskScore))
-
-        let record = ArchiveRecord(
-            machine: machine.model,
-            serial: machine.serial,
-            date: Date(),
-            inspector: settingsStore.inspectorName,
-            site: machine.site,
-            hours: machine.hours,
-            riskScore: riskScore,
-            aiSummary: "Manual inspection completed. \(allFindings.count) issue(s) found.",
-            sections: sections,
-            findings: allFindings,
-            estimatedCost: 0,
-            trends: []
-        )
-
-        archiveStore.add(record)
-        machineStore.updateStatus(machineId: machine.id, status: overallStatus)
-        sheetVM.resetSheet(for: machine.id)
-
-        machineStore.clearActiveChatMachine()
-
-        NotificationCenter.default.post(
-            name: .didFinishInspection,
-            object: record
-        )
-    }
 }
 
 // MARK: - SheetMachineStrip
