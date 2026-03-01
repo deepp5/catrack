@@ -214,113 +214,237 @@ struct InspectionPickerView: View {
     @State private var dropdownOpen = false
 
     var body: some View {
-        VStack(spacing: 0) {
-            VStack(alignment: .leading, spacing: 4) {
+        ZStack {
+            Color.black.ignoresSafeArea()
+
+            VStack(spacing: 0) {
+                // Top logo (notch-safe)
+                HStack {
+                    Spacer()
+                    Image("cat_logo")
+                        .resizable()
+                        .renderingMode(.original)
+                        .scaledToFit()
+                        .frame(height: 64)
+                    Spacer()
+                }
+                .padding(.top, 6)
+                .padding(.bottom, 6)
+                .background(Color.black)
+                .overlay(
+                    Rectangle()
+                        .frame(height: 0.5)
+                        .foregroundStyle(Color.white.opacity(0.12)),
+                    alignment: .bottom
+                )
+
+                // Content pushed down
+                header
+
+                // Reduced spacer so the selector card sits higher
+                Spacer()
+                    .frame(height: 26)
+
+                card
+                    .padding(.horizontal, 18)
+                    .padding(.top, 8)
+
+                Spacer(minLength: 0)
+            }
+            .padding(.top, 10)
+        }
+    }
+
+    private var header: some View {
+        HStack(alignment: .top, spacing: 12) {
+            RoundedRectangle(cornerRadius: 2, style: .continuous)
+                .fill(Color.catYellow)
+                .frame(width: 3, height: 54)
+                .padding(.top, 2)
+
+            VStack(alignment: .leading, spacing: 6) {
                 Text("NEW INSPECTION")
                     .font(.dmMono(11, weight: .medium))
                     .foregroundStyle(Color.appMuted)
-                Text("Start Inspection")
-                    .font(.bebasNeue(size: 32))
+
+                Text("START INSPECTION")
+                    .font(.system(size: 36, weight: .semibold, design: .default))
                     .foregroundStyle(.white)
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.horizontal, 20)
-            .padding(.top, 24)
-            .padding(.bottom, 32)
 
-            VStack(spacing: 0) {
-                Button {
-                    withAnimation(.easeInOut(duration: 0.2)) {
-                        dropdownOpen.toggle()
-                    }
-                } label: {
-                    HStack {
-                        Image(systemName: "gearshape.2.fill")
-                            .foregroundStyle(Color.catYellow)
-                            .font(.system(size: 14))
-                        Text(selectedMachine?.model ?? "Select Machine")
-                            .font(.barlow(15))
-                            .foregroundStyle(selectedMachine != nil ? .white : Color.appMuted)
-                        Spacer()
-                        Image(systemName: dropdownOpen ? "chevron.up" : "chevron.down")
-                            .font(.system(size: 12, weight: .semibold))
-                            .foregroundStyle(Color.appMuted)
-                    }
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 14)
-                    .background(Color.appPanel)
-                    .clipShape(RoundedRectangle(cornerRadius: K.cornerRadius))
-                }
-                .buttonStyle(.plain)
-
-                if dropdownOpen {
-                    VStack(spacing: 0) {
-                        ForEach(machines) { machine in
-                            Button {
-                                withAnimation(.easeInOut(duration: 0.15)) {
-                                    selectedMachine = machine
-                                    dropdownOpen = false
-                                }
-                            } label: {
-                                HStack(spacing: 12) {
-                                    ZStack {
-                                        RoundedRectangle(cornerRadius: 6)
-                                            .fill(Color.catYellow.opacity(0.15))
-                                            .frame(width: 30, height: 30)
-                                        Image(systemName: "gearshape.2.fill")
-                                            .font(.system(size: 12))
-                                            .foregroundStyle(Color.catYellow)
-                                    }
-                                    Text(machine.model)
-                                        .font(.barlow(15))
-                                        .foregroundStyle(.white)
-                                    Spacer()
-                                    if selectedMachine?.id == machine.id {
-                                        Image(systemName: "checkmark")
-                                            .font(.system(size: 12, weight: .bold))
-                                            .foregroundStyle(Color.catYellow)
-                                    }
-                                }
-                                .padding(.horizontal, 16)
-                                .padding(.vertical, 12)
-                                .background(selectedMachine?.id == machine.id ? Color.catYellow.opacity(0.08) : Color.clear)
-                            }
-                            .buttonStyle(.plain)
-                        }
-                    }
-                    .background(Color.appPanel)
-                    .clipShape(RoundedRectangle(cornerRadius: K.cornerRadius))
+                Text("Pick a machine to begin the walkaround. You can review and edit the inspection sheet after.")
+                    .font(.system(size: 14, weight: .regular))
+                    .foregroundStyle(Color.appMuted)
+                    .lineSpacing(2)
                     .padding(.top, 4)
-                    .transition(.opacity.combined(with: .move(edge: .top)))
-                }
             }
-            .padding(.horizontal, 20)
-            .zIndex(1)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 20)
+        .padding(.top, 36)
+        .padding(.bottom, 18)
+    }
+
+    private var card: some View {
+        VStack(spacing: 12) {
+            machineDropdown
+
+            if let m = selectedMachine {
+                machinePreview(m)
+                    .transition(.opacity.combined(with: .move(edge: .top)))
+            }
+
+            startButton
+                .padding(.top, 6)
+        }
+        .padding(16)
+        .background(Color.appPanel)
+        .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .stroke(Color.appBorder.opacity(0.6), lineWidth: 1)
+        )
+    }
+
+    private var machineDropdown: some View {
+        VStack(spacing: 0) {
+            Button {
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    dropdownOpen.toggle()
+                }
+            } label: {
+                HStack(spacing: 10) {
+                    Image(systemName: "gearshape.2.fill")
+                        .foregroundStyle(Color.catYellow)
+                        .font(.system(size: 14))
+
+                    Text(selectedMachine?.model ?? "Select Machine")
+                        .font(.system(size: 16, weight: .regular))
+                        .foregroundStyle(selectedMachine != nil ? .white : Color.appMuted)
+
+                    Spacer()
+
+                    Image(systemName: dropdownOpen ? "chevron.up" : "chevron.down")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(Color.appMuted)
+                }
+                .padding(.horizontal, 14)
+                .padding(.vertical, 14)
+                .background(Color.appSurface)
+                .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+            }
+            .buttonStyle(.plain)
+
+            if dropdownOpen {
+                VStack(spacing: 0) {
+                    ForEach(machines) { machine in
+                        Button {
+                            withAnimation(.easeInOut(duration: 0.15)) {
+                                selectedMachine = machine
+                                dropdownOpen = false
+                            }
+                        } label: {
+                            HStack(spacing: 12) {
+                                ZStack {
+                                    RoundedRectangle(cornerRadius: 8)
+                                        .fill(Color.catYellow.opacity(0.14))
+                                        .frame(width: 34, height: 34)
+                                    Image(systemName: "gearshape.2.fill")
+                                        .font(.system(size: 12))
+                                        .foregroundStyle(Color.catYellow)
+                                }
+
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(machine.model)
+                                        .font(.system(size: 15, weight: .semibold))
+                                        .foregroundStyle(.white)
+                                    Text("\(machine.serial) • \(machine.site) • \(machine.hours) hrs")
+                                        .font(.system(size: 12, weight: .regular))
+                                        .foregroundStyle(Color.appMuted)
+                                }
+
+                                Spacer()
+
+                                if selectedMachine?.id == machine.id {
+                                    Image(systemName: "checkmark.circle.fill")
+                                        .font(.system(size: 16, weight: .bold))
+                                        .foregroundStyle(Color.catYellow)
+                                }
+                            }
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 12)
+                            .background(selectedMachine?.id == machine.id ? Color.catYellow.opacity(0.08) : Color.clear)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+                .background(Color.appSurface)
+                .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                .padding(.top, 8)
+                .transition(.opacity.combined(with: .move(edge: .top)))
+            }
+        }
+    }
+
+    private func machinePreview(_ machine: Machine) -> some View {
+        HStack(spacing: 12) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .fill(Color.catYellow.opacity(0.12))
+                    .frame(width: 44, height: 44)
+                Image(systemName: "wrench.and.screwdriver.fill")
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundStyle(Color.catYellow)
+            }
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(machine.serial)
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(.white)
+                Text("\(machine.site) • \(machine.hours) hrs")
+                    .font(.system(size: 12, weight: .regular))
+                    .foregroundStyle(Color.appMuted)
+            }
 
             Spacer()
 
-            Button {
-                guard let machine = selectedMachine else { return }
-                onStart(machine)
-            } label: {
-                HStack(spacing: 10) {
-                    Image(systemName: "magnifyingglass")
-                        .font(.system(size: 16, weight: .semibold))
-                    Text("START INSPECTION")
-                        .font(.bebasNeue(size: 20))
-                }
-                .foregroundStyle(selectedMachine != nil ? Color.appBackground : Color.appMuted)
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 16)
-                .background(selectedMachine != nil ? Color.catYellow : Color.appPanel)
-                .clipShape(RoundedRectangle(cornerRadius: K.cornerRadius))
-            }
-            .disabled(selectedMachine == nil)
-            .padding(.horizontal, 20)
-            .padding(.bottom, 24)
-            .animation(.easeInOut(duration: 0.15), value: selectedMachine?.id)
+//            Text("Ready")
+//                .font(.system(size: 12, weight: .semibold))
+//                .foregroundStyle(Color.catYellow)
+//                .padding(.horizontal, 10)
+//                .padding(.vertical, 6)
+//                .background(Color.catYellow.opacity(0.10))
+//                .clipShape(Capsule())
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Color.appBackground)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
+        .background(Color.appSurface)
+        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+    }
+
+    private var startButton: some View {
+        Button {
+            guard let machine = selectedMachine else { return }
+            onStart(machine)
+        } label: {
+            HStack(spacing: 10) {
+                Image(systemName: "play.fill")
+                    .font(.system(size: 14, weight: .semibold))
+
+                Text("START INSPECTION")
+                    .font(.system(size: 16, weight: .semibold, design: .default))
+                    .tracking(0.3)
+            }
+            .foregroundStyle(selectedMachine != nil ? Color.appBackground : Color.appMuted)
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 13)
+            .background(selectedMachine != nil ? Color.catYellow : Color.appSurface)
+            .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .stroke(Color.appBorder.opacity(selectedMachine != nil ? 0 : 0.7), lineWidth: 1)
+            )
+        }
+        .disabled(selectedMachine == nil)
+        .animation(.easeInOut(duration: 0.15), value: selectedMachine?.id)
     }
 }

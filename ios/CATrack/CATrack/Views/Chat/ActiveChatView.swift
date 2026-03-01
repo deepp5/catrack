@@ -21,6 +21,15 @@ struct ActiveChatView: View {
         ZStack {
             Color.appBackground.ignoresSafeArea()
             
+            // Faded CAT logo background (add an image named "cat_logo" to Assets.xcassets)
+            Image("cat_logo")
+                .resizable()
+                .scaledToFit()
+                .frame(maxWidth: 320)
+                .opacity(0.10)
+                .blur(radius: 0.6)
+                .allowsHitTesting(false)
+            
             VStack(spacing: 0) {
                 MachineContextBar(machine: machine)
                 
@@ -106,14 +115,11 @@ struct ActiveChatView: View {
                     .foregroundStyle(Color.catYellow)
                     .font(.system(size: 16))
                 
-                VStack(alignment: .leading, spacing: 1) {
-                    Text(machine.serial)
-                        .font(.dmMono(12, weight: .medium))
-                        .foregroundStyle(Color.appMuted)
-                    Text("\(machine.site) · \(machine.hours) hrs")
-                        .font(.barlow(12))
-                        .foregroundStyle(Color.appMuted)
-                }
+                Text("\(machine.serial) • \(machine.site) • \(machine.hours) hrs")
+                    .font(.system(size: 14, weight: .semibold, design: .default))
+                    .foregroundStyle(.white.opacity(0.9))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
                 
                 Spacer()
                 

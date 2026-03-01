@@ -65,7 +65,8 @@ struct UserMessageView: View {
                 // Text bubble
                 if !message.text.isEmpty {
                     Text(message.text)
-                        .font(.barlow(15))
+                        .font(.system(size: 16, weight: .regular, design: .default))
+                        .lineSpacing(2)
                         .foregroundStyle(.white)
                         .padding(.horizontal, 14)
                         .padding(.vertical, 10)
@@ -108,7 +109,8 @@ struct AIMessageView: View {
             VStack(alignment: .leading, spacing: 8) {
                 if !message.text.isEmpty {
                     Text(message.text)
-                        .font(.barlow(15))
+                        .font(.system(size: 16, weight: .regular, design: .default))
+                        .lineSpacing(2)
                         .foregroundStyle(.white)
                         .padding(.horizontal, 14)
                         .padding(.vertical, 10)

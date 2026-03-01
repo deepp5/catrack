@@ -54,19 +54,19 @@ struct InputBarView: View {
             }
 
             HStack(alignment: .bottom, spacing: 10) {
-                // Media buttons
+                // Left-side media buttons
                 HStack(spacing: 6) {
                     CaptureButton(icon: "camera.fill", action: onCamera)
-                    CaptureButton(icon: "mic.fill", action: onVoice)
                     CaptureButton(icon: "paperclip", action: onDocs)
                 }
 
-                // Text input
+                // Text input (expands to fill available space)
                 TextField("Describe what you see...", text: $text, axis: .vertical)
                     .font(.barlow(15))
                     .foregroundStyle(.white)
                     .tint(.catYellow)
                     .lineLimit(1...5)
+                    .frame(maxWidth: .infinity)
                     .padding(.horizontal, 12)
                     .padding(.vertical, 9)
                     .background(Color.appPanel)
@@ -76,13 +76,17 @@ struct InputBarView: View {
                         if canSend { onSend() }
                     }
 
-                // Send button
-                Button(action: onSend) {
-                    Image(systemName: "arrow.up.circle.fill")
-                        .font(.system(size: 32))
-                        .foregroundStyle(canSend ? Color.catYellow : Color.appMuted)
+                // Right-side buttons (mic + send)
+                HStack(spacing: 6) {
+                    CaptureButton(icon: "mic.fill", action: onVoice)
+
+                    Button(action: onSend) {
+                        Image(systemName: "arrow.up.circle.fill")
+                            .font(.system(size: 32))
+                            .foregroundStyle(canSend ? Color.catYellow : Color.appMuted)
+                    }
+                    .disabled(!canSend)
                 }
-                .disabled(!canSend)
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 10)
