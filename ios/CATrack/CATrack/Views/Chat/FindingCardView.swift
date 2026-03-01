@@ -15,7 +15,7 @@ struct FindingCardView: View {
                     RoundedRectangle(cornerRadius: 3)
                         .fill(finding.severity.color)
                         .frame(width: 4, height: 40)
-
+                    //testing adding to github
                     VStack(alignment: .leading, spacing: 2) {
                         HStack(spacing: 6) {
                             Text(finding.componentType.uppercased())

@@ -11,7 +11,7 @@ class APIService {
     func configure(baseURL: String) {
         self.baseURL = baseURL
     }
-    
+    //testing adding to github
     func analyzeVideoCommand(userText: String,
                              currentChecklistState: [String: String],
                              framesBase64: [String]?) async throws -> FastAnalyzeResponse {

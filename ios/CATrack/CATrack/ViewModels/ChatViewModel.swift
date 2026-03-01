@@ -8,7 +8,53 @@ class ChatViewModel: ObservableObject {
     @Published var sessions: [UUID: [Message]] = [:]
     @Published var isLoading: Bool = false
     @Published var pendingMedia: [AttachedMedia] = []
-    @Published var activeInspectionIds: [UUID: String] = [:]
+    @Published var activeInspectionIds: [UUID: String] = [:] {
+        didSet { persistInspectionIds() }
+    }
+    //testing adding to github
+    private let sessionsKey      = "catrack.chat.sessions"
+    private let inspectionIdsKey = "catrack.chat.inspectionIds"
+
+    init() {
+        loadSessions()
+        loadInspectionIds()
+    }
+
+    // MARK: - Persistence
+
+    private func persistSessions() {
+        let stringKeyed = Dictionary(uniqueKeysWithValues: sessions.map { ($0.key.uuidString, $0.value) })
+        if let data = try? JSONEncoder().encode(stringKeyed) {
+            UserDefaults.standard.set(data, forKey: sessionsKey)
+        }
+    }
+
+    private func loadSessions() {
+        guard let data = UserDefaults.standard.data(forKey: sessionsKey),
+              let stringKeyed = try? JSONDecoder().decode([String: [Message]].self, from: data) else { return }
+        sessions = Dictionary(uniqueKeysWithValues: stringKeyed.compactMap { k, v in
+            guard let uuid = UUID(uuidString: k) else { return nil }
+            return (uuid, v)
+        })
+    }
+
+    private func persistInspectionIds() {
+        let stringKeyed = Dictionary(uniqueKeysWithValues: activeInspectionIds.map { ($0.key.uuidString, $0.value) })
+        if let data = try? JSONEncoder().encode(stringKeyed) {
+            UserDefaults.standard.set(data, forKey: inspectionIdsKey)
+        }
+    }
+
+    private func loadInspectionIds() {
+        guard let data = UserDefaults.standard.data(forKey: inspectionIdsKey),
+              let stringKeyed = try? JSONDecoder().decode([String: String].self, from: data) else { return }
+        activeInspectionIds = Dictionary(uniqueKeysWithValues: stringKeyed.compactMap { k, v in
+            guard let uuid = UUID(uuidString: k) else { return nil }
+            return (uuid, v)
+        })
+    }
+
+    // MARK: - Session Management
 
     func messagesFor(_ machineId: UUID) -> [Message] {
         sessions[machineId] ?? []

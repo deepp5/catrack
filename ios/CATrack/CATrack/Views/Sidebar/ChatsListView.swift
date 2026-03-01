@@ -10,7 +10,7 @@ struct ChatsListView: View {
     @State private var showMachinePicker = false
     @State private var selectedMachine: Machine?
     @State private var navigateToChat = false
-
+    //testing adding to github
     var body: some View {
         NavigationStack {
             ZStack {

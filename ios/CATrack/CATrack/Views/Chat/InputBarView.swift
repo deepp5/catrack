@@ -14,7 +14,7 @@ struct InputBarView: View {
     var canSend: Bool {
         (!text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !pendingMedia.isEmpty) && !isLoading
     }
-
+    //testing adding to github
     var body: some View {
         VStack(spacing: 0) {
             Rectangle()

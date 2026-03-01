@@ -4,8 +4,21 @@ import Combine     // ← ADD THIS
 @MainActor
 class MachineStore: ObservableObject {
     @Published var machines: [Machine] = Machine.samples
-    @Published var activeMachineId: UUID?
-    @Published var activeChatMachine: Machine? = nil
+    @Published var activeMachineId: UUID? {
+        didSet { persist() }
+    }
+    @Published var activeChatMachine: Machine? = nil {
+        didSet { persist() }
+    }
+
+    private let storageKey = "catrack.machinestore"
+
+    private struct Stored: Codable {
+        var activeMachineId: UUID?
+        var activeChatMachine: Machine?
+    }
+    //testing adding to github
+    init() { load() }
 
     var activeMachine: Machine? {
         guard let id = activeMachineId else { return nil }

@@ -1,4 +1,34 @@
 import SwiftUI
+import Combine
+
+// MARK: - KeyboardHeightObserver
+class KeyboardHeightObserver: ObservableObject {
+    @Published var height: CGFloat = 0
+
+    init() {
+        NotificationCenter.default.addObserver(
+            self, selector: #selector(keyboardWillShow),
+            name: UIResponder.keyboardWillShowNotification, object: nil
+        )
+        NotificationCenter.default.addObserver(
+            self, selector: #selector(keyboardWillHide),
+            name: UIResponder.keyboardWillHideNotification, object: nil
+        )
+    }
+    //testing adding to github
+    @objc func keyboardWillShow(_ notification: Notification) {
+        guard let frame = notification.userInfo?[UIResponder.keyboardFrameEndUserInfoKey] as? CGRect,
+              let duration = notification.userInfo?[UIResponder.keyboardAnimationDurationUserInfoKey] as? Double
+        else { return }
+        withAnimation(.easeInOut(duration: duration)) { height = frame.height }
+    }
+
+    @objc func keyboardWillHide(_ notification: Notification) {
+        guard let duration = notification.userInfo?[UIResponder.keyboardAnimationDurationUserInfoKey] as? Double
+        else { return }
+        withAnimation(.easeInOut(duration: duration)) { height = 0 }
+    }
+}
 
 // MARK: - ActiveChatView
 struct ActiveChatView: View {

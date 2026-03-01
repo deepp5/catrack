@@ -16,7 +16,7 @@ struct CaptureView: View {
     @StateObject private var camera = CameraController()
     @State private var mode: CaptureMode = .photo
     @State private var isSending: Bool = false
-
+    //testing adding to github
     var body: some View {
         ZStack {
             CameraPreview(session: camera.session)

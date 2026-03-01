@@ -12,7 +12,7 @@ extension Color {
     static let severityFail  = Color(hex: "#FF453A")
     static let severityMon   = Color(hex: "#FF9F0A")
     static let severityPass  = Color(hex: "#30D158")
-
+    //testing adding to github
     init(hex: String) {
         let hex = hex.trimmingCharacters(in: CharacterSet.alphanumerics.inverted)
         var int: UInt64 = 0

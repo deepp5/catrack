@@ -17,7 +17,7 @@ struct InspectionSheetView: View {
         guard let m = machine else { return [] }
         return sheetVM.sectionsFor(m.id)
     }
-
+    //testing adding to github
     var body: some View {
         ZStack {
             Color.appBackground.ignoresSafeArea()

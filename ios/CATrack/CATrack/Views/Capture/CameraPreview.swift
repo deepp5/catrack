@@ -17,7 +17,7 @@ struct CameraPreview: UIViewRepresentable {
         v.videoPreviewLayer.videoGravity = .resizeAspectFill
         return v
     }
-
+    //testing adding to github
     func updateUIView(_ uiView: PreviewView, context: Context) {}
 
     final class PreviewView: UIView {

@@ -8,22 +8,46 @@ struct AssistCaptureView: View {
     @EnvironmentObject var sheetVM: InspectionSheetViewModel
     @EnvironmentObject var chatVM: ChatViewModel
 
-    @StateObject private var camera = CameraController()
+    @StateObject private var camera  = CameraController()
     @StateObject private var hotword = HotwordManager.shared
 
-    @State private var showOverlay = false
+    @State private var showOverlay       = false
     @State private var overlayPhase: GlassHotwordOverlay.Phase = .listening
     @State private var overlayTranscript = ""
-    @State private var overlayResult = ""
-    @State private var isWorking = false
+    @State private var overlayResult     = ""
+    @State private var isWorking         = false
+    @State private var permissionError: String? = nil
+
+    enum AssistState { case free; case guided(step: Int) }
+    @State private var assistState: AssistState = .free
 
     var body: some View {
         ZStack {
+            // Camera feed
             CameraPreview(session: camera.session)
                 .ignoresSafeArea()
 
-            // Overlay — centered at top, only visible after wake word
-            VStack {
+            // Top + bottom gradient scrims for legibility
+            VStack(spacing: 0) {
+                LinearGradient(
+                    colors: [Color.black.opacity(0.55), .clear],
+                    startPoint: .top, endPoint: .bottom
+                )
+                .frame(height: 160)
+                .ignoresSafeArea(edges: .top)
+
+                Spacer()
+
+                LinearGradient(
+                    colors: [.clear, Color.black.opacity(0.6)],
+                    startPoint: .top, endPoint: .bottom
+                )
+                .frame(height: 220)
+                .ignoresSafeArea(edges: .bottom)
+            }
+
+            // Overlay card + permission error
+            VStack(spacing: 8) {
                 if showOverlay {
                     GlassHotwordOverlay(
                         phase: overlayPhase,
@@ -31,58 +55,77 @@ struct AssistCaptureView: View {
                         result: overlayResult
                     )
                     .padding(.horizontal, 16)
-                    .padding(.top, 12)
+                    .padding(.top, 54)
                 }
-                Spacer()
-            }
 
-            VStack {
+                if let err = permissionError {
+                    HStack(spacing: 10) {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .foregroundStyle(.red)
+                        Text(err)
+                            .font(.barlow(12))
+                            .foregroundStyle(.white)
+                            .lineLimit(2)
+                    }
+                    .padding(12)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(.ultraThinMaterial)
+                    .clipShape(RoundedRectangle(cornerRadius: 14))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 14)
+                            .stroke(Color.red.opacity(0.3), lineWidth: 1)
+                    )
+                    .padding(.horizontal, 16)
+                    .padding(.top, showOverlay ? 0 : 54)
+                }
+
                 Spacer()
                 bottomBar
             }
         }
         .onAppear {
+            // Start camera video-only (no audio input) so preview is visible.
             camera.setSessionAudioEnabled(false)
             camera.start()
 
             Task {
+                // Wait for camera session to be running and fully settled.
                 await waitForSessionReady()
-                try? await Task.sleep(nanoseconds: 500_000_000) // 0.5s settle
+                try? await Task.sleep(nanoseconds: 800_000_000) // 0.8s
+
                 do {
                     try await hotword.requestPermissions()
                     try hotword.start()
                 } catch {
-                    showOverlay = true
-                    overlayPhase = .error
-                    overlayResult = error.localizedDescription
+                    permissionError = error.localizedDescription
                 }
             }
         }
         .onDisappear {
             hotword.stop()
-            camera.setSessionAudioEnabled(true)
             camera.stop()
         }
         .onChange(of: hotword.state) { _, newState in
             handleHotwordState(newState)
         }
+        .animation(.spring(response: 0.4, dampingFraction: 0.8), value: showOverlay)
     }
 
-    // MARK: - Hotword State Handler
+    // MARK: - Hotword State
 
     private func handleHotwordState(_ newState: HotwordManager.ListenState) {
         switch newState {
         case .idle:
             guard !isWorking else { return }
-            showOverlay = false
+            withAnimation { showOverlay = false }
             overlayTranscript = ""
-            overlayResult = ""
+            overlayResult     = ""
 
         case .triggered:
-            showOverlay = true
-            overlayPhase = .listening
+            withAnimation { showOverlay = true }
+            overlayPhase      = .listening
             overlayTranscript = ""
-            overlayResult = ""
+            overlayResult     = ""
 
         case .finalCommand(let cmd):
             print("🔥 FINAL COMMAND RECEIVED:", cmd)
@@ -91,13 +134,12 @@ struct AssistCaptureView: View {
             overlayPhase = .heard
             overlayTranscript = cmd
             overlayResult = ""
-            isWorking = true
 
             Task { await runCommand(cmd) }
 
         case .error(let msg):
-            showOverlay = true
-            overlayPhase = .error
+            withAnimation { showOverlay = true }
+            overlayPhase  = .error
             overlayResult = msg
         }
     }
@@ -105,16 +147,70 @@ struct AssistCaptureView: View {
     // MARK: - Run Command
 
     private func runCommand(_ cmd: String) async {
+        guard !isWorking else { return }
+        isWorking = true
 
-        overlayPhase = .analyzing
+        let lower = cmd.lowercased()
+
+        // Guided mode resume
+        if case .free = assistState,
+           lower.contains("continue") || lower.contains("resume") ||
+           lower.contains("ok") || lower.contains("sure") {
+            let items = orderedChecklistItems()
+            if !items.isEmpty {
+                assistState   = .guided(step: 0)
+                overlayPhase  = .done
+                overlayResult = "Guided mode — Step 1/\(items.count): \(items[0])"
+            }
+            isWorking = false
+            hotword.resumeAfterCapture()
+            return
+        }
+
+        // Start guided inspection
+        if lower.contains("start inspection") {
+            let allItems = orderedChecklistItems()
+            if !allItems.isEmpty {
+                assistState   = .guided(step: 0)
+                overlayPhase  = .done
+                overlayResult = "Step 1/\(allItems.count): \(allItems[0])"
+            }
+            isWorking = false
+            hotword.resumeAfterCapture()
+            return
+        }
+
+        // Guided: non-check command
+        if case .guided(let step) = assistState {
+            let items = orderedChecklistItems()
+            let isCheck = lower.contains("check") || lower.contains("inspect") ||
+                          lower.contains("evaluate") || lower.contains("ready")
+            if !isCheck {
+                overlayPhase  = .done
+                overlayResult = "Step \(step + 1)/\(items.count): \(items[step]) — say \"check\" when ready"
+                isWorking = false
+                hotword.resumeAfterCapture()
+                return
+            }
+        }
+
+        // --- Capture + AI ---
+        overlayPhase      = .heard
+        overlayTranscript = cmd
+        overlayResult     = ""
+
+        // Pause hotword mic tap (releases AVAudioEngine input node)
+        hotword.pauseAudio()
+        // Small gap so the audio engine fully teardown before capture
+        try? await Task.sleep(nanoseconds: 300_000_000) // 0.3s
+
+        overlayPhase  = .analyzing
         overlayResult = "Capturing frame…"
 
-        hotword.pauseAudio()
-        try? await Task.sleep(nanoseconds: 300_000_000)
-
+        // Camera is already running (video-only) — just capture
         guard let jpeg = await camera.captureJPEG() else {
-            overlayPhase = .error
-            overlayResult = "Couldn't capture frame."
+            overlayPhase  = .error
+            overlayResult = "Couldn't capture frame. Try again."
             isWorking = false
             hotword.resumeAfterCapture()
             return
@@ -127,18 +223,31 @@ struct AssistCaptureView: View {
 
         for s in sections {
             for f in s.fields {
+                let val: String
                 switch f.status {
-                case .pass: checklistState[f.label] = "PASS"
-                case .monitor: checklistState[f.label] = "MONITOR"
-                case .fail: checklistState[f.label] = "FAIL"
-                case .pending: checklistState[f.label] = "none"
+                case .pass:    val = "PASS"
+                case .monitor: val = "MONITOR"
+                case .fail:    val = "FAIL"
+                case .pending: val = "none"
                 }
+                checklistState[f.label] = val
             }
         }
 
         do {
+            // If you want to use guided-specific prompt text, swap userText: cmd with userText: promptText below.
+            let promptText: String
+            if case .guided(let step) = assistState {
+                let items = orderedChecklistItems()
+                promptText = step < items.count
+                    ? "Inspect this component only: \(items[step]). Determine PASS, MONITOR, or FAIL. Only evaluate this component."
+                    : cmd
+            } else {
+                promptText = cmd
+            }
+
             let resp = try await APIService.shared.analyzeVideoCommand(
-                userText: cmd,
+                userText: promptText,
                 currentChecklistState: checklistState,
                 framesBase64: [jpeg.base64EncodedString()]
             )
@@ -159,12 +268,9 @@ struct AssistCaptureView: View {
                 )
             }
 
-            if !updates.isEmpty {
-                sheetVM.applyUpdates(updates, for: machine.id)
-            }
+            if !updates.isEmpty { sheetVM.applyUpdates(updates, for: machine.id) }
 
             let summary: String
-
             if !updates.isEmpty {
                 let risk = resp.riskScore ?? "n/a"
                 summary = "Updated \(updates.count) item\(updates.count == 1 ? "" : "s") · Risk: \(risk)"
@@ -174,72 +280,129 @@ struct AssistCaptureView: View {
                 summary = "No updates found."
             }
 
-            overlayPhase = .done
-            overlayResult = summary
+            if case .guided(let step) = assistState {
+                let items = orderedChecklistItems()
+                if !updates.isEmpty {
+                    let nextStep = step + 1
+                    if nextStep < items.count {
+                        assistState   = .guided(step: nextStep)
+                        overlayResult = "✓ Updated — Step \(nextStep + 1)/\(items.count): \(items[nextStep])"
+                    } else {
+                        assistState   = .free
+                        overlayResult = "Guided inspection complete."
+                    }
+                } else {
+                    overlayResult = "No issues detected. Move closer and say \"check\" again."
+                }
+                overlayPhase = .done
+            } else {
+                overlayPhase  = .done
+                overlayResult = summary
+            }
 
         } catch {
-            overlayPhase = .error
+            overlayPhase  = .error
             overlayResult = compact(error.localizedDescription)
         }
 
         isWorking = false
         hotword.resumeAfterCapture()
+
+        // Return to listening state but keep result visible
+        overlayPhase      = .listening
+        overlayTranscript = ""
     }
 
-    // MARK: - Bottom Bar
+    // MARK: - Bottom Bar (glassmorphic)
 
     private var bottomBar: some View {
         VStack(spacing: 0) {
-            Rectangle().fill(Color.appBorder).frame(height: 0.5)
-            HStack {
-                Button("Close") { dismiss() }
-                    .foregroundStyle(.white.opacity(0.85))
-                    .padding(.horizontal, 14)
+            Rectangle()
+                .fill(Color.white.opacity(0.1))
+                .frame(height: 0.5)
+
+            HStack(alignment: .center) {
+                // Close button
+                Button { dismiss() } label: {
+                    HStack(spacing: 6) {
+                        Image(systemName: "xmark")
+                            .font(.system(size: 13, weight: .semibold))
+                        Text("Close")
+                            .font(.barlow(14, weight: .semibold))
+                    }
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 16)
                     .padding(.vertical, 10)
                     .background(.ultraThinMaterial)
                     .clipShape(RoundedRectangle(cornerRadius: 14))
-
-                Spacer()
-
-                VStack(spacing: 6) {
-                    Image(systemName: "waveform.circle.fill")
-                        .font(.system(size: 28, weight: .semibold))
-                        .foregroundStyle(Color.catYellow)
-                        .symbolEffect(.pulse)
-
-                    Text("Say: Hey Cat…")
-                        .font(.dmMono(10))
-                        .foregroundStyle(Color.white.opacity(0.6))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 14)
+                            .stroke(Color.white.opacity(0.15), lineWidth: 1)
+                    )
                 }
 
                 Spacer()
 
+                // Center mic indicator
+                VStack(spacing: 5) {
+                    let isActive = hotword.state == .triggered
+                    ZStack {
+                        Circle()
+                            .fill(Color.catYellow.opacity(0.15))
+                            .frame(width: 50, height: 50)
+                        Circle()
+                            .stroke(Color.catYellow.opacity(isActive ? 0.6 : 0.25), lineWidth: 1.5)
+                            .frame(width: 50, height: 50)
+                        Image(systemName: isActive ? "waveform.circle.fill" : "waveform.circle")
+                            .font(.system(size: 26, weight: .semibold))
+                            .foregroundStyle(Color.catYellow)
+                            .symbolEffect(.pulse, isActive: isActive)
+                    }
+                    Text(isActive ? "Listening…" : "Say: Hey Cat")
+                        .font(.dmMono(9))
+                        .foregroundStyle(isActive ? Color.catYellow.opacity(0.9) : Color.white.opacity(0.5))
+                        .animation(.easeInOut(duration: 0.2), value: isActive)
+                }
+
+                Spacer()
+
+                // Flip camera
                 Button { camera.flip() } label: {
                     Image(systemName: "arrow.triangle.2.circlepath.camera")
-                        .font(.system(size: 18, weight: .semibold))
+                        .font(.system(size: 17, weight: .semibold))
                         .foregroundStyle(.white)
                         .padding(12)
                         .background(.ultraThinMaterial)
                         .clipShape(Circle())
+                        .overlay(
+                            Circle().stroke(Color.white.opacity(0.15), lineWidth: 1)
+                        )
                 }
             }
-            .padding(.horizontal, 18)
+            .padding(.horizontal, 20)
             .padding(.vertical, 14)
-            .background(Color.black.opacity(0.3).ignoresSafeArea(edges: .bottom))
+            .background(.ultraThinMaterial)
+            .ignoresSafeArea(edges: .bottom)
         }
     }
 
     // MARK: - Helpers
 
     private func waitForSessionReady() async {
-        let deadline = Date().addingTimeInterval(4.0)
+        let deadline = Date().addingTimeInterval(5.0)
         while !camera.isSessionReady && Date() < deadline {
             try? await Task.sleep(nanoseconds: 100_000_000)
         }
     }
 
-    /// Match backend key (item label) to the field in the sheet sections
-    private func findField(_ backendKey: String, in sections: [SheetSection]) -> (sectionId: String, fieldId: String)? {
+    private func orderedChecklistItems() -> [String] {
+        sheetVM.sectionsFor(machine.id).flatMap { $0.fields.map { $0.label } }
+    }
+
+    private func findField(
+        _ backendKey: String,
+        in sections: [SheetSection]
+    ) -> (sectionId: String, fieldId: String)? {
         for sec in sections {
             if let f = sec.fields.first(where: { $0.label == backendKey || $0.id == backendKey }) {
                 return (sec.id, f.id)
