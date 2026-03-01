@@ -44,61 +44,85 @@ struct GlassHotwordOverlay: View {
     }
 
     var body: some View {
-        GeometryReader { geo in
-            VStack(alignment: .leading, spacing: 20) {
+        HStack(alignment: .center, spacing: 14) {
 
-                HStack(spacing: 14) {
-                    Image(systemName: icon)
-                        .font(.system(size: 26, weight: .semibold))
-                        .foregroundStyle(iconColor)
+            ZStack {
+                Circle()
+                    .fill(iconColor.opacity(0.15))
+                    .frame(width: 34, height: 34)
 
-                    Text(title)
-                        .font(.system(size: 20, weight: .bold))
-                        .foregroundStyle(.white)
-                }
+                Image(systemName: icon)
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(iconColor)
+            }
+            .frame(width: 36, height: 36)
+
+            VStack(alignment: .leading, spacing: 4) {
+
+                Text(title.uppercased())
+                    .font(.system(size: 10, weight: .bold))
+                    .foregroundStyle(iconColor)
+                    .tracking(1.2)
 
                 if !transcript.isEmpty {
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text("Command")
-                            .font(.system(size: 14, weight: .semibold))
-                            .foregroundStyle(.white.opacity(0.7))
-
-                        Text(transcript)
-                            .font(.system(size: 16, weight: .medium))
-                            .foregroundStyle(.white)
-                    }
+                    Text("\"\(transcript)\"")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(.white)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
                 }
 
                 if !result.isEmpty {
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text("Result")
-                            .font(.system(size: 14, weight: .semibold))
-                            .foregroundStyle(.white.opacity(0.7))
-
-                        Text(result)
-                            .font(.system(size: 16))
-                            .foregroundStyle(.white)
-                            .multilineTextAlignment(.leading)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
+                    Text(result)
+                        .font(.system(size: 12))
+                        .foregroundStyle(.white.opacity(0.75))
+                        .lineLimit(2)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
-
-                Spacer()
             }
-            .padding(24)
-            .frame(width: geo.size.width,
-                   height: geo.size.height * 0.5,
-                   alignment: .topLeading)
-            .background(
-                RoundedRectangle(cornerRadius: 20, style: .continuous)
-                    .fill(Color.black.opacity(0.85))
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 20, style: .continuous)
-                    .stroke(Color.white.opacity(0.15), lineWidth: 1)
-            )
-            .shadow(radius: 20)
+
+            Spacer(minLength: 0)
         }
-        .ignoresSafeArea(edges: .top)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
+        .frame(maxWidth: .infinity)
+        .background(
+            ZStack {
+                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                    .fill(.ultraThinMaterial)
+
+                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                    .fill(
+                        LinearGradient(
+                            colors: [
+                                iconColor.opacity(0.08),
+                                Color.clear
+                            ],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+
+                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                    .stroke(
+                        LinearGradient(
+                            colors: [
+                                Color.white.opacity(0.25),
+                                iconColor.opacity(0.35)
+                            ],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        ),
+                        lineWidth: 1
+                    )
+            }
+        )
+        .shadow(radius: 16)
+        .padding(.horizontal, 16)
+        .padding(.top, 10)
+        .transition(.move(edge: .top).combined(with: .opacity))
+        .animation(.easeInOut(duration: 0.25), value: phase)
+        .animation(.easeInOut(duration: 0.25), value: transcript)
+        .animation(.easeInOut(duration: 0.25), value: result)
     }
 }
