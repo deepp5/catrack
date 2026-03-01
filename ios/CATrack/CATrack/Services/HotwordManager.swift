@@ -27,6 +27,9 @@ final class HotwordManager: ObservableObject {
     private var silenceTimer: Timer?
     private var lastUpdateTime = Date()
 
+    // When true, bypass wake word and treat any final speech as a command
+    var continuousMode: Bool = false
+
     private init() {}
 
     // MARK: - Permissions
@@ -164,6 +167,17 @@ final class HotwordManager: ObservableObject {
     // MARK: - Transcript
 
     private func processTranscript(_ text: String, isFinal: Bool) {
+        // Continuous guided mode: bypass wake word
+        if continuousMode {
+            if isFinal {
+                let cmd = text.trimmingCharacters(in: .whitespacesAndNewlines)
+                if !cmd.isEmpty {
+                    state = .finalCommand(cmd)
+                }
+            }
+            return
+        }
+
         if !hasTriggered {
             if text.contains("hey cat") {
                 hasTriggered = true

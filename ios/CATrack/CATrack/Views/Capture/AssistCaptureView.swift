@@ -146,6 +146,7 @@ struct AssistCaptureView: View {
             if !allItems.isEmpty {
 
                 assistState = .guided(step: 0)
+                hotword.continuousMode = true
 
                 showOverlay = true
                 overlayPhase = .done
@@ -318,6 +319,7 @@ struct AssistCaptureView: View {
                         """
                     } else {
                         assistState = .free
+                        hotword.continuousMode = false
                         overlayResult = "Guided inspection complete."
                     }
                 } else {
@@ -432,4 +434,3 @@ struct AssistCaptureView: View {
         return String(t[t.startIndex..<t.index(t.startIndex, offsetBy: max)]) + "…"
     }
 }
-
