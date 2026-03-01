@@ -1,4 +1,4 @@
-#!/Users/Vishrut_Patel/Desktop/catrack/backend/venv/bin/python
+#!/Users/deep/Desktop/catrack/backend/venv/bin/python
 import sys
 from uvicorn.main import main
 if __name__ == '__main__':

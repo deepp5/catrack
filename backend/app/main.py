@@ -13,6 +13,12 @@ from openai import OpenAI
 from dotenv import load_dotenv
 from supabase import create_client
 
+# Supermemory (optional)
+try:
+    from supermemory import Supermemory
+except Exception:
+    Supermemory = None
+
 Status = Literal["PASS", "MONITOR", "FAIL", "none"]
 
 class AnalyzeRequest(BaseModel):
@@ -106,6 +112,124 @@ SUPABASE_BUCKET = os.getenv("SUPABASE_BUCKET", "media")
 
 TRANSCRIBE_MODEL = os.getenv("TRANSCRIBE_MODEL", "gpt-4o-mini-transcribe")
 
+# --- Supermemory setup (safe/no-op if not configured) ---
+SUPERMEMORY_API_KEY = os.getenv("SUPERMEMORY_API_KEY")
+sm_client = None
+if Supermemory and SUPERMEMORY_API_KEY:
+    try:
+        # Some SDK versions accept api_key=, others read from env.
+        try:
+            sm_client = Supermemory(api_key=SUPERMEMORY_API_KEY)
+        except TypeError:
+            sm_client = Supermemory()
+    except Exception as e:
+        print("Supermemory init failed:", e)
+        sm_client = None
+
+
+def sm_add_memory(content: str, tags: list[str]):
+    """Store a memory snippet. Safe no-op if Supermemory not configured."""
+    if not sm_client:
+        return None
+    try:
+        resp = sm_client.add(content=content, container_tags=tags)
+        # Helpful during hackathon debugging
+        print("Supermemory add ok:", type(resp), resp)
+        return resp
+    except Exception as e:
+        print("Supermemory add failed:", e)
+        return None
+
+
+def sm_search_memory(query: str, tags: list[str], k: int = 5) -> list[str]:
+    """Search memory snippets. Safe no-op if not configured.
+
+    The Supermemory SDK can return different shapes depending on version:
+    - list[Document]
+    - object with `.documents` or `.results`
+    - dict with `documents` / `results` / `data`
+    """
+    if not sm_client:
+        return []
+
+    try:
+        res = sm_client.search.documents(q=query, container_tags=tags)
+
+        # Normalize to a list-like container
+        items = None
+        if hasattr(res, "documents"):
+            items = getattr(res, "documents")
+        elif hasattr(res, "results"):
+            items = getattr(res, "results")
+        elif isinstance(res, dict):
+            items = res.get("documents") or res.get("results") or res.get("data") or []
+        else:
+            items = res
+
+        if items is None:
+            return []
+
+        # If it's not a list/tuple, try to coerce
+        if not isinstance(items, (list, tuple)):
+            try:
+                items = list(items)
+            except Exception:
+                items = []
+
+        out: list[str] = []
+        for r in (items or [])[:k]:
+            if r is None:
+                continue
+
+            # Supermemory Result often stores text inside r.chunks[*].content
+            text = ""
+
+            if hasattr(r, "chunks"):
+                try:
+                    chunks = getattr(r, "chunks") or []
+                    for c in chunks:
+                        if hasattr(c, "content") and getattr(c, "content"):
+                            text = str(getattr(c, "content")).strip()
+                            break
+                        if isinstance(c, dict) and (c.get("content") or c.get("text")):
+                            text = str(c.get("content") or c.get("text")).strip()
+                            break
+                except Exception:
+                    pass
+
+            # Fallback to r.content / r.text
+            if not text:
+                if hasattr(r, "content") and getattr(r, "content"):
+                    text = str(getattr(r, "content")).strip()
+                elif hasattr(r, "text") and getattr(r, "text"):
+                    text = str(getattr(r, "text")).strip()
+                elif isinstance(r, dict):
+                    text = str(r.get("content") or r.get("text") or "").strip()
+                else:
+                    text = str(r).strip()
+
+            if text:
+                out.append(text)
+
+        # Deduplicate while preserving order (keeps prompts clean)
+        seen = set()
+        deduped: list[str] = []
+        for x in out:
+            if x not in seen:
+                seen.add(x)
+                deduped.append(x)
+        return deduped
+
+    except Exception as e:
+        print("Supermemory search failed:", e)
+        return []
+
+
+def _machine_tags(machine_id: str, inspection_id: str | None = None) -> list[str]:
+    # IMPORTANT: Supermemory containerTags use exact array matching.
+    # To keep retrieval reliable, we use a single partition tag per machine.
+    return [f"machine:{machine_id}"]
+
 if not SUPABASE_URL or not SUPABASE_SERVICE_ROLE_KEY:
     raise RuntimeError("Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY in .env")
 
@@ -146,7 +270,9 @@ def run_inspection_logic(
     user_text: str,
     current_checklist_state: Dict[str, Status],
     images: Optional[List[str]] = None,
-    chat_history: Optional[List[Dict[str, str]]] = None
+    chat_history: Optional[List[Dict[str, str]]] = None,
+    memory_snippets: Optional[List[str]] = None,
+    machine_id: Optional[str] = None,
 ):
     canonical_keys = get_flat_checklist_keys()
 
@@ -158,6 +284,13 @@ def run_inspection_logic(
             }
 
     allowed_items = canonical_keys
+    memory_block = ""
+    if memory_snippets:
+        trimmed = [m.strip() for m in memory_snippets if m and m.strip()]
+        if trimmed:
+            joined = "\n".join([f"- {m}" for m in trimmed[:5]])
+            label = machine_id or "this machine"
+            memory_block = f"\n\nRecent machine history for {label}:\n{joined}\n"
 
     instruction_text = f"""
     You are an AI inspection assistant for Caterpillar heavy equipment.
@@ -208,6 +341,8 @@ def run_inspection_logic(
 
     User message:
     {user_text}
+
+    {memory_block}
 
     Current checklist state:
     {current_checklist_state}
@@ -265,7 +400,7 @@ def analyze(req: AnalyzeRequest):
     #Fetch inspection from DB
     resp = (
         supabase.table("inspections")
-        .select("id, checklist_json")
+        .select("id, checklist_json, machine_model")
         .eq("id", req.inspection_id)
         .limit(1)
         .execute()
@@ -277,13 +412,25 @@ def analyze(req: AnalyzeRequest):
 
     checklist_state = rows[0]["checklist_json"]
 
-    #Run AI logic
+    # Supermemory retrieval (use machine_model as machine_id for MVP)
+    machine_id = rows[0].get("machine_model") or "unknown"
+    tags = _machine_tags(machine_id)
+    mem = sm_search_memory(req.user_text, tags, k=3)
+
+    memory_hits = mem
+
     result = run_inspection_logic(
         user_text=req.user_text,
         current_checklist_state=checklist_state,
         images=req.images,
-        chat_history=req.chat_history
+        chat_history=req.chat_history,
+        memory_snippets=mem,
+        machine_id=machine_id,
     )
+
+    # Debug: expose memory usage for the demo
+    result["memory_used"] = bool(memory_hits)
+    result["memory_hits"] = memory_hits
 
     # Apply updates to checklist JSON
     updates = result.get("checklist_updates", {})
@@ -306,9 +453,91 @@ def public_storage_url(bucket: str, path: str) -> str:
     return f"{SUPABASE_URL}/storage/v1/object/public/{bucket}/{path}"
 
 
+
 @app.get("/health")
 def health():
     return {"ok": True}
+
+
+
+# Supermemory debug status endpoint
+@app.get("/debug/memory-status")
+def debug_memory_status():
+    return {
+        "configured": bool(sm_client),
+        "has_api_key": bool(SUPERMEMORY_API_KEY),
+        "client_type": str(type(sm_client)) if sm_client else None,
+    }
+
+# Supermemory debug endpoint
+@app.get("/debug/memory")
+def debug_memory(machine_id: str, q: str, k: int = 5):
+    """Debug endpoint to verify Supermemory storage/retrieval for a machine."""
+    tags = _machine_tags(machine_id)
+    hits = sm_search_memory(q, tags, k=k)
+    return {"machine_id": machine_id, "q": q, "k": k, "hits": hits}
+
+
+# Raw Supermemory search object info for debugging
+@app.get("/debug/memory-raw")
+def debug_memory_raw(machine_id: str, q: str, k: int = 5):
+    """Return raw Supermemory search object info (type + repr) for debugging."""
+    tags = _machine_tags(machine_id)
+    if not sm_client:
+        return {"configured": False, "tags": tags}
+
+    try:
+        res = sm_client.search.documents(q=q, container_tags=tags)
+        info = {
+            "configured": True,
+            "tags": tags,
+            "type": str(type(res)),
+            "repr": repr(res)[:1200],
+        }
+        # also try common containers
+        if hasattr(res, "documents"):
+            docs = getattr(res, "documents")
+            info["documents_type"] = str(type(docs))
+            try:
+                info["documents_len"] = len(docs)
+            except Exception:
+                pass
+        if hasattr(res, "results"):
+            rr = getattr(res, "results")
+            info["results_type"] = str(type(rr))
+            try:
+                info["results_len"] = len(rr)
+            except Exception:
+                pass
+        if isinstance(res, dict):
+            info["keys"] = list(res.keys())
+        return info
+    except Exception as e:
+        return {"configured": True, "tags": tags, "error": str(e)}
+
+
+# Debug endpoint to force-add a memory and immediately search for it
+@app.post("/debug/memory-add")
+def debug_memory_add(machine_id: str, content: str, q: str = "", k: int = 5):
+    """Force add a memory under machine tag and optionally search immediately."""
+    tags = _machine_tags(machine_id)
+    sm_add_memory(content, tags)
+    query = q or content
+    hits = sm_search_memory(query, tags, k=k)
+    return {"machine_id": machine_id, "tags": tags, "query": query, "hits": hits}
+
+
+# Raw Supermemory add response for debugging
+@app.post("/debug/memory-add-raw")
+def debug_memory_add_raw(machine_id: str, content: str):
+    """Return raw Supermemory add response (type + repr)."""
+    tags = _machine_tags(machine_id)
+    resp = sm_add_memory(content, tags)
+    return {
+        "tags": tags,
+        "type": str(type(resp)),
+        "repr": repr(resp)[:1200],
+    }
 
 @app.get("/debug/next-media")
 def debug_next_media():
@@ -461,14 +690,7 @@ async def voice_analyze(
         # Fetch inspection from DB (checklist stored server-side)
         resp = (
             supabase.table("inspections")
-            .select("id, checklist_json")
-            .eq("id", inspection_id)
-            .limit(1)
-            .execute()
-        )
-        resp = (
-            supabase.table("inspections")
-            .select("id, checklist_json")
+            .select("id, checklist_json, machine_model")
             .eq("id", inspection_id)
             .limit(1)
             .execute()
@@ -496,12 +718,23 @@ async def voice_analyze(
         if len(transcript_text) < 3:
             raise RuntimeError("transcript too short/empty")
 
-        #run inspection AI logic
+        machine_id = rows[0].get("machine_model") or "unknown"
+        tags = _machine_tags(machine_id)
+        mem = sm_search_memory(transcript_text, tags, k=3)
+
+        memory_hits = mem
+
         result = run_inspection_logic(
             user_text=transcript_text,
             current_checklist_state=checklist_state,
-            images=None
+            images=None,
+            memory_snippets=mem,
+            machine_id=machine_id,
         )
+
+        # Debug: expose memory usage for the demo
+        result["memory_used"] = bool(memory_hits)
+        result["memory_hits"] = memory_hits
 
         #apply updates to checklist JSON
         updates = result.get("checklist_updates", {})
@@ -639,6 +872,39 @@ def generate_report(req: GenerateReportRequest):
     try:
         report = json.loads(content)
         report["risk_score"] = risk_score
+
+        # Save full report JSON to Supabase (Archive source of truth)
+        try:
+            supabase.table("inspection_reports").upsert(
+                {
+                    "inspection_id": req.inspection_id,
+                    "report_json": report,
+                },
+                on_conflict="inspection_id",
+            ).execute()
+        except Exception as e:
+            print("Supabase upsert (inspection_reports) failed:", e)
+
+        # Store to Supermemory (summary form). Supabase remains source-of-truth.
+        try:
+            machine_id = machine_model or "unknown"
+            tags = _machine_tags(machine_id)
+            overall = report.get("overall_risk", overall_risk)
+
+            critical = report.get("critical_findings", []) or []
+            recs = report.get("recommendations", []) or []
+
+            summary = (
+                f"Inspection {req.inspection_id} for {machine_id}\n"
+                f"Overall Risk: {overall} | Risk Score: {risk_score}\n"
+                f"FAIL count: {len(fail_items)} | MONITOR count: {len(monitor_items)} | PASS count: {len(pass_items)}\n"
+                f"Critical: {', '.join(critical[:3])}\n"
+                f"Recommendations: {', '.join(recs[:3])}"
+            )
+            sm_add_memory(summary, tags)
+        except Exception as e:
+            print("Supermemory store (generate-report) failed:", e)
+
         return report
     except Exception as e:
         raise HTTPException(
