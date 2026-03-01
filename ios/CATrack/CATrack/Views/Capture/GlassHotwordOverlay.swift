@@ -1,46 +1,94 @@
-//
-//  GlassHotwordOverlay.swift
-//  CATrack
-//
-//  Created by Vishrut Patel on 2/28/26.
-//
-
 import SwiftUI
 
 struct GlassHotwordOverlay: View {
-    let stateText: String
-    let confirmed: Bool
+    enum Phase: Equatable {
+        case listening
+        case heard
+        case analyzing
+        case done
+        case error
+    }
+
+    let phase: Phase
+    let transcript: String
+    let result: String
+
+    private var icon: String {
+        switch phase {
+        case .listening:  return "waveform"
+        case .heard:      return "quote.bubble"
+        case .analyzing:  return "sparkles"
+        case .done:       return "checkmark.circle.fill"
+        case .error:      return "exclamationmark.triangle.fill"
+        }
+    }
+
+    private var iconColor: Color {
+        switch phase {
+        case .listening:  return .catYellow
+        case .heard:      return .catYellow
+        case .analyzing:  return .catYellow
+        case .done:       return .severityPass
+        case .error:      return .severityFail
+        }
+    }
+
+    private var title: String {
+        switch phase {
+        case .listening:  return "CAT is listening…"
+        case .heard:      return "Heard"
+        case .analyzing:  return "Analyzing…"
+        case .done:       return "Done"
+        case .error:      return "Error"
+        }
+    }
 
     var body: some View {
-        VStack(spacing: 10) {
-            HStack(spacing: 10) {
-                Image(systemName: confirmed ? "checkmark.circle.fill" : "waveform")
-                    .font(.system(size: 18, weight: .semibold))
-                    .foregroundStyle(confirmed ? Color.severityPass : Color.catYellow)
+        HStack(alignment: .top, spacing: 12) {
+            Image(systemName: icon)
+                .font(.system(size: 16, weight: .semibold))
+                .foregroundStyle(iconColor)
+                .frame(width: 20)
+                .symbolEffect(.pulse, isActive: phase == .listening || phase == .analyzing)
 
-                Text(stateText)
-                    .font(.barlow(14, weight: .semibold))
+            VStack(alignment: .leading, spacing: 5) {
+                Text(title)
+                    .font(.dmMono(12, weight: .semibold))
                     .foregroundStyle(.white)
 
-                Spacer()
+                if !transcript.isEmpty {
+                    Text("\(transcript)")
+                        .font(.barlow(13, weight: .medium))
+                        .foregroundStyle(Color.white.opacity(0.92))
+                        .lineLimit(2)
+                }
+
+                if !result.isEmpty {
+                    Text(result)
+                        .font(.barlow(12))
+                        .foregroundStyle(Color.appMuted)
+                        .lineLimit(2)
+                }
             }
 
-            Text(confirmed ? "Command captured." : "Listening…")
-                .font(.dmMono(11))
-                .foregroundStyle(Color.appMuted)
-                .frame(maxWidth: .infinity, alignment: .leading)
+            Spacer(minLength: 0)
         }
-        .padding(14)
+        .padding(.horizontal, 14)
+        .padding(.vertical, 12)
+        // Full width — fills whatever container gives it horizontal space
+        .frame(maxWidth: .infinity, alignment: .leading)
         .background(
             RoundedRectangle(cornerRadius: 16, style: .continuous)
                 .fill(.ultraThinMaterial)
                 .overlay(
                     RoundedRectangle(cornerRadius: 16, style: .continuous)
-                        .stroke(Color.white.opacity(0.10), lineWidth: 1)
+                        .stroke(Color.white.opacity(0.12), lineWidth: 1)
                 )
         )
-        .shadow(radius: 12)
-        .padding(.horizontal, 14)
-        .padding(.top, 14)
+        .shadow(color: .black.opacity(0.3), radius: 16, x: 0, y: 4)
+        .transition(.move(edge: .top).combined(with: .opacity))
+        .animation(.spring(response: 0.35, dampingFraction: 0.8), value: phase)
+        .animation(.spring(response: 0.35, dampingFraction: 0.8), value: transcript)
+        .animation(.spring(response: 0.35, dampingFraction: 0.8), value: result)
     }
 }

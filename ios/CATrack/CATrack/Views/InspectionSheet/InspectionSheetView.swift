@@ -78,6 +78,20 @@ struct InspectionSheetView: View {
                         }
                         .padding(40)
                     }
+                } else {
+                    VStack(spacing: 12) {
+                        Image(systemName: "checklist")
+                            .font(.system(size: 52))
+                            .foregroundStyle(Color.appMuted)
+                        Text("No Active Inspection")
+                            .font(.barlow(18, weight: .semibold))
+                            .foregroundStyle(.white)
+                        Text("Tap Inspect to start a new inspection.")
+                            .font(.barlow(14))
+                            .foregroundStyle(Color.appMuted)
+                            .multilineTextAlignment(.center)
+                    }
+                    .padding(40)
                 }
                 .alert("Report Error", isPresented: $showReportError, actions: {
                     Button("OK", role: .cancel) {}
@@ -224,19 +238,20 @@ struct InspectionSheetView: View {
             estimatedCost: 0,
             trends: []
         )
-        archiveStore.add(record)
-        machineStore.updateStatus(machineId: machine.id, status: overallStatus)
-        sheetVM.resetSheet(for: machine.id)
 
-        // Close active inspection session
-        machineStore.clearActiveChatMachine()
+            archiveStore.add(record)
+            machineStore.updateStatus(machineId: machine.id, status: overallStatus)
+            sheetVM.resetSheet(for: machine.id)
 
-        // Notify RootView to switch to Archive and auto-open this record
-        NotificationCenter.default.post(
-            name: .didFinishInspection,
-            object: record
-        )
-    }
+            // Close active inspection session
+            machineStore.clearActiveChatMachine()
+
+            // Notify RootView to switch to Archive and auto-open this record
+            NotificationCenter.default.post(
+                name: .didFinishInspection,
+                object: record
+            )
+}
 
 }
 
