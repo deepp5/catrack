@@ -561,6 +561,22 @@ def generate_report(req: GenerateReportRequest):
     elif len(monitor_items) >= 3:
         overall_risk = "Moderate"
 
+    # Compute numeric risk score (0–100). Backend is source of truth.
+    total_items = len(checklist)
+
+    # Base score
+    risk_score = 100
+
+    # Penalize FAIL and MONITOR
+    risk_score -= len(fail_items) * 10
+    risk_score -= len(monitor_items) * 3
+
+    # Optional: lightly penalize unchecked items
+    risk_score -= len(none_items) * 2
+
+    # Clamp between 0 and 100
+    risk_score = max(0, min(100, risk_score))
+
     #Build prompt for report generation
     prompt_text = f"""
     You are generating a professional Caterpillar equipment inspection report aligned with standard inspection documentation.
@@ -585,7 +601,8 @@ def generate_report(req: GenerateReportRequest):
       "critical_findings": ["string"],
       "recommendations": ["string"],
       "operational_readiness": "string",
-      "overall_risk": "Low | Moderate | High"
+      "overall_risk": "Low | Moderate | High",
+      "risk_score": 0
     }}
 
     Rules:
@@ -620,7 +637,9 @@ def generate_report(req: GenerateReportRequest):
         raise HTTPException(status_code=500, detail=f"OpenAI request failed in generate-report: {e}")
 
     try:
-        return json.loads(content)
+        report = json.loads(content)
+        report["risk_score"] = risk_score
+        return report
     except Exception as e:
         raise HTTPException(
             status_code=500,

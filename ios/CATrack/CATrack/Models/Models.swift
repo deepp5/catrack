@@ -264,6 +264,7 @@ struct GenerateReportResponse: Decodable {
     let recommendations: [String]
     let operationalReadiness: String
     let overallRisk: String
+    let riskScore: Int
 
     enum CodingKeys: String, CodingKey {
         case executiveSummary = "executive_summary"
@@ -271,5 +272,6 @@ struct GenerateReportResponse: Decodable {
         case recommendations
         case operationalReadiness = "operational_readiness"
         case overallRisk = "overall_risk"
+        case riskScore = "risk_score"
     }
 }

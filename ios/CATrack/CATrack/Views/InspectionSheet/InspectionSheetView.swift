@@ -18,89 +18,90 @@ struct InspectionSheetView: View {
     }
 
     var body: some View {
-        NavigationStack {
-            ZStack {
-                Color.appBackground.ignoresSafeArea()
+        ZStack {
+            NavigationStack {
+                ZStack {
+                    Color.appBackground.ignoresSafeArea()
 
-                if let machine = machine {
-                    VStack(spacing: 0) {
-                        SheetMachineStrip(machine: machine)
+                    if let machine = machine {
+                        VStack(spacing: 0) {
+                            SheetMachineStrip(machine: machine)
 
-                        ScrollView {
-                            VStack(spacing: 12) {
-                                ForEach(sections) { section in
-                                    VStack(spacing: 0) {
-                                        SheetSectionHeader(section: section)
-                                        ForEach(section.fields) { field in
-                                            SheetFieldCard(
-                                                field: field,
-                                                onUpdate: { newStatus, note in
-                                                    sheetVM.updateField(
-                                                        machineId: machine.id,
-                                                        sectionId: section.id,
-                                                        fieldId: field.id,
-                                                        status: newStatus,
-                                                        note: note
-                                                    )
+                            ScrollView {
+                                VStack(spacing: 12) {
+                                    ForEach(sections) { section in
+                                        VStack(spacing: 0) {
+                                            SheetSectionHeader(section: section)
+                                            ForEach(section.fields) { field in
+                                                SheetFieldCard(
+                                                    field: field,
+                                                    onUpdate: { newStatus, note in
+                                                        sheetVM.updateField(
+                                                            machineId: machine.id,
+                                                            sectionId: section.id,
+                                                            fieldId: field.id,
+                                                            status: newStatus,
+                                                            note: note
+                                                        )
+                                                    }
+                                                )
+                                                if field.id != section.fields.last?.id {
+                                                    Divider().background(Color.appBorder).padding(.leading, 16)
                                                 }
-                                            )
-                                            if field.id != section.fields.last?.id {
-                                                Divider().background(Color.appBorder).padding(.leading, 16)
                                             }
                                         }
+                                        .background(Color.appPanel)
+                                        .clipShape(RoundedRectangle(cornerRadius: K.cornerRadius))
+                                        .padding(.horizontal, 16)
                                     }
-                                    .background(Color.appPanel)
-                                    .clipShape(RoundedRectangle(cornerRadius: K.cornerRadius))
-                                    .padding(.horizontal, 16)
+                                    Color.clear.frame(height: 80)
                                 }
-                                Color.clear.frame(height: 80)
+                                .padding(.top, 12)
                             }
-                            .padding(.top, 12)
-                        }
 
-                        FinalizeBar(sections: sections) {
-                            generateReport()
+                            FinalizeBar(sections: sections) {
+                                generateReport()
+                            }
                         }
+                    } else {
+                        VStack(spacing: 12) {
+                            Image(systemName: "checklist")
+                                .font(.system(size: 52))
+                                .foregroundStyle(Color.appMuted)
+                            Text("No Active Inspection")
+                                .font(.barlow(18, weight: .semibold))
+                                .foregroundStyle(.white)
+                            Text("Select a machine from the Chats tab to begin")
+                                .font(.barlow(14))
+                                .foregroundStyle(Color.appMuted)
+                                .multilineTextAlignment(.center)
+                        }
+                        .padding(40)
                     }
-                } else {
-                    VStack(spacing: 12) {
-                        Image(systemName: "checklist")
-                            .font(.system(size: 52))
-                            .foregroundStyle(Color.appMuted)
-                        Text("No Active Inspection")
-                            .font(.barlow(18, weight: .semibold))
-                            .foregroundStyle(.white)
-                        Text("Select a machine from the Chats tab to begin")
-                            .font(.barlow(14))
-                            .foregroundStyle(Color.appMuted)
-                            .multilineTextAlignment(.center)
-                    }
-                    .padding(40)
                 }
+                .alert("Report Error", isPresented: $showReportError, actions: {
+                    Button("OK", role: .cancel) {}
+                }, message: {
+                    Text(reportErrorMessage ?? "Unknown error")
+                })
+                .navigationTitle("Inspection Sheet")
+                .navigationBarTitleDisplayMode(.large)
             }
-            .overlay {
-                if isGeneratingReport {
-                    ZStack {
-                        Color.black
-                            .ignoresSafeArea()
 
-                        ProgressView()
-                            .progressViewStyle(
-                                CircularProgressViewStyle(tint: Color.catYellow)
-                            )
-                            .scaleEffect(1.8)
-                    }
-                    .transition(.opacity)
-                    .animation(.easeInOut(duration: 0.2), value: isGeneratingReport)
+            if isGeneratingReport {
+                ZStack {
+                    Color.black
+                        .ignoresSafeArea()
+
+                    ProgressView()
+                        .progressViewStyle(
+                            CircularProgressViewStyle(tint: Color.catYellow)
+                        )
+                        .scaleEffect(1.8)
                 }
+                .transition(.opacity)
+                .animation(.easeInOut(duration: 0.2), value: isGeneratingReport)
             }
-            .alert("Report Error", isPresented: $showReportError, actions: {
-                Button("OK", role: .cancel) {}
-            }, message: {
-                Text(reportErrorMessage ?? "Unknown error")
-            })
-            .navigationTitle("Inspection Sheet")
-            .navigationBarTitleDisplayMode(.large)
         }
     }
 
@@ -183,22 +184,8 @@ struct InspectionSheetView: View {
         let allStatuses = sections.map { $0.overallStatus }
         let overallStatus = allStatuses.max(by: { severityRank($0) < severityRank($1) }) ?? .pass
 
-        // Prefer AI report risk if present.
-        let riskScore: Int
-        switch report.overallRisk.lowercased() {
-        case "high":
-            riskScore = 55
-        case "moderate":
-            riskScore = 75
-        case "low":
-            riskScore = 95
-        default:
-            switch overallStatus {
-            case .fail:    riskScore = 55
-            case .monitor: riskScore = 75
-            case .pass:    riskScore = 95
-            }
-        }
+        // Use backend authoritative numeric risk score
+        let riskScore = report.riskScore
 
         let summaryLines: [String] = [
             report.executiveSummary,
@@ -276,12 +263,17 @@ struct InspectionSheetView: View {
         let allStatuses = sections.map { $0.overallStatus }
         let overallStatus = allStatuses.max(by: { severityRank($0) < severityRank($1) }) ?? .pass
 
-        let riskScore: Int
-        switch overallStatus {
-        case .fail:    riskScore = 55
-        case .monitor: riskScore = 75
-        case .pass:    riskScore = 95
-        }
+        // Manual fallback when AI report not used
+        // Compute simple backend-aligned heuristic
+        let failCount = sections.flatMap { $0.fields }.filter { $0.status == .fail }.count
+        let monitorCount = sections.flatMap { $0.fields }.filter { $0.status == .monitor }.count
+        let noneCount = sections.flatMap { $0.fields }.filter { $0.status.rawValue.lowercased() == "none" }.count
+
+        var riskScore = 100
+        riskScore -= failCount * 10
+        riskScore -= monitorCount * 3
+        riskScore -= noneCount * 2
+        riskScore = max(0, min(100, riskScore))
 
         let record = ArchiveRecord(
             machine: machine.model,
