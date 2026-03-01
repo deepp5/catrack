@@ -1,3 +1,4 @@
+
 import SwiftUI
 
 // MARK: - AppTab
@@ -30,7 +31,7 @@ struct RootView: View {
     @EnvironmentObject var chatVM: ChatViewModel
 
     @State private var selectedTab: AppTab = .newInspection
-    @State private var showChat: Bool = false  // active chat tab visible
+    @State private var showChat: Bool = false
     @State private var autoOpenArchiveRecord: ArchiveRecord? = nil
     @State private var hideBottomNav: Bool = false
 
@@ -38,7 +39,7 @@ struct RootView: View {
         ZStack(alignment: .bottom) {
             Color.appBackground.ignoresSafeArea()
 
-            // Chat view — always rendered, keyboard avoidance works naturally
+            // Chat view — always rendered, never destroyed
             if let machine = machineStore.activeChatMachine {
                 ActiveChatView(machine: machine)
                     .opacity(showChat ? 1 : 0)
@@ -54,6 +55,13 @@ struct RootView: View {
                     switch selectedTab {
                     case .newInspection:
                         InspectionPickerView { machine in
+                            // Clear old session ONLY if switching to a DIFFERENT machine
+                            if let previous = machineStore.activeChatMachine,
+                               previous.id != machine.id {
+                                chatVM.clearSession(machineId: previous.id)
+                                sheetVM.resetSheet(for: previous.id)
+                            }
+
                             if !machineStore.machines.contains(where: { $0.id == machine.id }) {
                                 machineStore.addMachine(machine)
                             }
@@ -63,17 +71,18 @@ struct RootView: View {
                             machineStore.setActiveChatMachine(machine)
                             showChat = true
                         }
+
                     case .sheet:
                         if machineStore.activeChatMachine != nil {
                             InspectionSheetView()
                         } else {
                             EmptyView()
-                                .onAppear {
-                                    selectedTab = .archive
-                                }
+                                .onAppear { selectedTab = .archive }
                         }
+
                     case .archive:
                         ArchiveListView(autoOpenRecord: $autoOpenArchiveRecord)
+
                     case .settings:
                         SettingsView()
                     }
@@ -82,44 +91,31 @@ struct RootView: View {
                 .padding(.bottom, K.navHeight)
             }
 
+            // Bottom navbar
             if !hideBottomNav {
                 HStack(spacing: 0) {
-                    // Plus / Inspect button
+                    // Inspect button — navigates to picker WITHOUT clearing session
                     Button {
-                        if machineStore.activeChatMachine != nil {
-                            // Already in inspection — confirm reset or just go to picker
-                            machineStore.clearActiveChatMachine()
-                            showChat = false
-                            selectedTab = .newInspection
-                        } else {
-                            showChat = false
-                            selectedTab = .newInspection
-                        }
+                        showChat = false
+                        selectedTab = .newInspection
                     } label: {
                         VStack(spacing: 4) {
-
                             let isSelected = !showChat && selectedTab == .newInspection
 
                             Image(systemName: "plus.circle.fill")
-                                .font(.system(size: 26,
-                                              weight: isSelected ? .semibold : .regular))
-                                .foregroundStyle(
-                                    isSelected ? Color.catYellow : Color.appMuted
-                                )
+                                .font(.system(size: 26, weight: isSelected ? .semibold : .regular))
+                                .foregroundStyle(isSelected ? Color.catYellow : Color.appMuted)
 
                             Text("Inspect")
-                                .font(.barlow(10,
-                                              weight: isSelected ? .semibold : .regular))
-                                .foregroundStyle(
-                                    isSelected ? Color.catYellow : Color.appMuted
-                                )
+                                .font(.barlow(10, weight: isSelected ? .semibold : .regular))
+                                .foregroundStyle(isSelected ? Color.catYellow : Color.appMuted)
                         }
                         .frame(maxWidth: .infinity)
                         .padding(.top, 10)
                     }
                     .buttonStyle(.plain)
 
-                    // Sheet tab
+                    // Sheet tab — only when inspection active
                     if machineStore.activeChatMachine != nil {
                         NavTabButton(tab: .sheet, isSelected: !showChat && selectedTab == .sheet) {
                             showChat = false
@@ -127,7 +123,7 @@ struct RootView: View {
                         }
                     }
 
-                    // Dynamic Chat tab — only shows when inspection is active
+                    // Chat tab — only when inspection active
                     if machineStore.activeChatMachine != nil {
                         Button {
                             showChat = true
@@ -147,13 +143,11 @@ struct RootView: View {
                         .transition(.opacity.combined(with: .scale(scale: 0.8)))
                     }
 
-                    // Archive tab
                     NavTabButton(tab: .archive, isSelected: !showChat && selectedTab == .archive) {
                         showChat = false
                         selectedTab = .archive
                     }
 
-                    // Settings tab
                     NavTabButton(tab: .settings, isSelected: !showChat && selectedTab == .settings) {
                         showChat = false
                         selectedTab = .settings
@@ -174,6 +168,12 @@ struct RootView: View {
             }
         }
         .ignoresSafeArea(edges: .bottom)
+        // Restore chat on relaunch if a session was active
+        .onAppear {
+            if machineStore.activeChatMachine != nil {
+                showChat = true
+            }
+        }
         .onReceive(NotificationCenter.default.publisher(for: .didFinishInspection)) { notification in
             showChat = false
             selectedTab = .archive
@@ -211,6 +211,7 @@ struct NavTabButton: View {
                 Image(systemName: tab.icon)
                     .font(.system(size: 22, weight: isSelected ? .semibold : .regular))
                     .foregroundStyle(isSelected ? Color.catYellow : Color.appMuted)
+
                 Text(tab.label)
                     .font(.barlow(10, weight: isSelected ? .semibold : .regular))
                     .foregroundStyle(isSelected ? Color.catYellow : Color.appMuted)
@@ -245,7 +246,7 @@ struct InspectionPickerView: View {
             Color.black.ignoresSafeArea()
 
             VStack(spacing: 0) {
-                // Top logo (notch-safe)
+                // Top logo
                 HStack {
                     Spacer()
                     Image("cat_logo")
@@ -265,12 +266,9 @@ struct InspectionPickerView: View {
                     alignment: .bottom
                 )
 
-                // Content pushed down
                 header
 
-                // Reduced spacer so the selector card sits higher
-                Spacer()
-                    .frame(height: 26)
+                Spacer().frame(height: 26)
 
                 card
                     .padding(.horizontal, 18)
@@ -321,7 +319,6 @@ struct InspectionPickerView: View {
             }
 
             startButton
-                .padding(.top, 6)
         }
         .padding(16)
         .background(Color.appPanel)
@@ -433,14 +430,6 @@ struct InspectionPickerView: View {
             }
 
             Spacer()
-
-//            Text("Ready")
-//                .font(.system(size: 12, weight: .semibold))
-//                .foregroundStyle(Color.catYellow)
-//                .padding(.horizontal, 10)
-//                .padding(.vertical, 6)
-//                .background(Color.catYellow.opacity(0.10))
-//                .clipShape(Capsule())
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 10)
@@ -476,8 +465,10 @@ struct InspectionPickerView: View {
     }
 }
 
+// MARK: - Notification Names
 extension Notification.Name {
-    static let didFinishInspection = Notification.Name("didFinishInspection")
+    static let didFinishInspection      = Notification.Name("didFinishInspection")
     static let didStartGeneratingReport = Notification.Name("didStartGeneratingReport")
-    static let didEndGeneratingReport = Notification.Name("didEndGeneratingReport")
+    static let didEndGeneratingReport   = Notification.Name("didEndGeneratingReport")
 }
+
