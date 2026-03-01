@@ -32,6 +32,7 @@ struct RootView: View {
     @State private var selectedTab: AppTab = .newInspection
     @State private var showChat: Bool = false  // active chat tab visible
     @State private var autoOpenArchiveRecord: ArchiveRecord? = nil
+    @State private var hideBottomNav: Bool = false
 
     var body: some View {
         ZStack(alignment: .bottom) {
@@ -78,85 +79,86 @@ struct RootView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .padding(.bottom, K.navHeight)
 
-            // Bottom navbar
-            HStack(spacing: 0) {
-                // Plus / Inspect button
-                Button {
-                    if machineStore.activeChatMachine != nil {
-                        // Already in inspection — confirm reset or just go to picker
-                        machineStore.clearActiveChatMachine()
-                        showChat = false
-                        selectedTab = .newInspection
-                    } else {
-                        showChat = false
-                        selectedTab = .newInspection
-                    }
-                } label: {
-                    VStack(spacing: 4) {
-                        Image(systemName: "plus.circle.fill")
-                            .font(.system(size: 26, weight: .semibold))
-                            .foregroundStyle(Color.catYellow)
-                        Text("Inspect")
-                            .font(.barlow(10, weight: .semibold))
-                            .foregroundStyle(Color.catYellow)
-                    }
-                    .frame(maxWidth: .infinity)
-                    .padding(.top, 10)
-                }
-                .buttonStyle(.plain)
-
-                // Sheet tab
-                if machineStore.activeChatMachine != nil {
-                    NavTabButton(tab: .sheet, isSelected: !showChat && selectedTab == .sheet) {
-                        showChat = false
-                        selectedTab = .sheet
-                    }
-                }
-
-                // Dynamic Chat tab — only shows when inspection is active
-                if machineStore.activeChatMachine != nil {
+            if !hideBottomNav {
+                HStack(spacing: 0) {
+                    // Plus / Inspect button
                     Button {
-                        showChat = true
+                        if machineStore.activeChatMachine != nil {
+                            // Already in inspection — confirm reset or just go to picker
+                            machineStore.clearActiveChatMachine()
+                            showChat = false
+                            selectedTab = .newInspection
+                        } else {
+                            showChat = false
+                            selectedTab = .newInspection
+                        }
                     } label: {
                         VStack(spacing: 4) {
-                            Image(systemName: "bubble.left.and.bubble.right.fill")
-                                .font(.system(size: 22, weight: showChat ? .semibold : .regular))
-                                .foregroundStyle(showChat ? Color.catYellow : Color.appMuted)
-                            Text("Chat")
-                                .font(.barlow(10, weight: showChat ? .semibold : .regular))
-                                .foregroundStyle(showChat ? Color.catYellow : Color.appMuted)
+                            Image(systemName: "plus.circle.fill")
+                                .font(.system(size: 26, weight: .semibold))
+                                .foregroundStyle(Color.catYellow)
+                            Text("Inspect")
+                                .font(.barlow(10, weight: .semibold))
+                                .foregroundStyle(Color.catYellow)
                         }
                         .frame(maxWidth: .infinity)
                         .padding(.top, 10)
                     }
                     .buttonStyle(.plain)
-                    .transition(.opacity.combined(with: .scale(scale: 0.8)))
-                }
 
-                // Archive tab
-                NavTabButton(tab: .archive, isSelected: !showChat && selectedTab == .archive) {
-                    showChat = false
-                    selectedTab = .archive
-                }
+                    // Sheet tab
+                    if machineStore.activeChatMachine != nil {
+                        NavTabButton(tab: .sheet, isSelected: !showChat && selectedTab == .sheet) {
+                            showChat = false
+                            selectedTab = .sheet
+                        }
+                    }
 
-                // Settings tab
-                NavTabButton(tab: .settings, isSelected: !showChat && selectedTab == .settings) {
-                    showChat = false
-                    selectedTab = .settings
+                    // Dynamic Chat tab — only shows when inspection is active
+                    if machineStore.activeChatMachine != nil {
+                        Button {
+                            showChat = true
+                        } label: {
+                            VStack(spacing: 4) {
+                                Image(systemName: "bubble.left.and.bubble.right.fill")
+                                    .font(.system(size: 22, weight: showChat ? .semibold : .regular))
+                                    .foregroundStyle(showChat ? Color.catYellow : Color.appMuted)
+                                Text("Chat")
+                                    .font(.barlow(10, weight: showChat ? .semibold : .regular))
+                                    .foregroundStyle(showChat ? Color.catYellow : Color.appMuted)
+                            }
+                            .frame(maxWidth: .infinity)
+                            .padding(.top, 10)
+                        }
+                        .buttonStyle(.plain)
+                        .transition(.opacity.combined(with: .scale(scale: 0.8)))
+                    }
+
+                    // Archive tab
+                    NavTabButton(tab: .archive, isSelected: !showChat && selectedTab == .archive) {
+                        showChat = false
+                        selectedTab = .archive
+                    }
+
+                    // Settings tab
+                    NavTabButton(tab: .settings, isSelected: !showChat && selectedTab == .settings) {
+                        showChat = false
+                        selectedTab = .settings
+                    }
                 }
+                .animation(.easeInOut(duration: 0.2), value: machineStore.activeChatMachine?.id)
+                .frame(height: K.navHeight)
+                .background(
+                    Color.appSurface
+                        .overlay(
+                            Rectangle()
+                                .frame(height: 0.5)
+                                .foregroundStyle(Color.appBorder),
+                            alignment: .top
+                        )
+                )
+                .ignoresSafeArea(edges: .bottom)
             }
-            .animation(.easeInOut(duration: 0.2), value: machineStore.activeChatMachine?.id)
-            .frame(height: K.navHeight)
-            .background(
-                Color.appSurface
-                    .overlay(
-                        Rectangle()
-                            .frame(height: 0.5)
-                            .foregroundStyle(Color.appBorder),
-                        alignment: .top
-                    )
-            )
-            .ignoresSafeArea(edges: .bottom)
         }
         .ignoresSafeArea(edges: .bottom)
         .onReceive(NotificationCenter.default.publisher(for: .didFinishInspection)) { notification in
@@ -166,6 +168,12 @@ struct RootView: View {
             if let record = notification.object as? ArchiveRecord {
                 autoOpenArchiveRecord = record
             }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .didStartGeneratingReport)) { _ in
+            hideBottomNav = true
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .didEndGeneratingReport)) { _ in
+            hideBottomNav = false
         }
         .onChange(of: machineStore.activeChatMachine) { newValue in
             if newValue == nil {
@@ -327,4 +335,6 @@ struct InspectionPickerView: View {
 
 extension Notification.Name {
     static let didFinishInspection = Notification.Name("didFinishInspection")
+    static let didStartGeneratingReport = Notification.Name("didStartGeneratingReport")
+    static let didEndGeneratingReport = Notification.Name("didEndGeneratingReport")
 }

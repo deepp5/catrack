@@ -84,8 +84,9 @@ struct InspectionSheetView: View {
                 }, message: {
                     Text(reportErrorMessage ?? "Unknown error")
                 })
-                .navigationTitle("Inspection Sheet")
+                .navigationTitle(isGeneratingReport ? "" : "Inspection Sheet")
                 .navigationBarTitleDisplayMode(.large)
+                .toolbar(isGeneratingReport ? .hidden : .visible, for: .navigationBar)
             }
 
             if isGeneratingReport {
@@ -122,6 +123,7 @@ struct InspectionSheetView: View {
             return
         }
 
+        NotificationCenter.default.post(name: .didStartGeneratingReport, object: nil)
         isGeneratingReport = true
 
         Task {
@@ -142,11 +144,13 @@ struct InspectionSheetView: View {
                 // Calls FastAPI /generate-report
                 let report = try await APIService.shared.generateReport(inspectionId: inspectionId)
                 await MainActor.run {
+                    NotificationCenter.default.post(name: .didEndGeneratingReport, object: nil)
                     isGeneratingReport = false
                     finalizeInspection(with: report)
                 }
             } catch {
                 await MainActor.run {
+                    NotificationCenter.default.post(name: .didEndGeneratingReport, object: nil)
                     isGeneratingReport = false
                     reportErrorMessage = error.localizedDescription
                     showReportError = true
