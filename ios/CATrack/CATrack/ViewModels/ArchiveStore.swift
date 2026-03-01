@@ -4,7 +4,7 @@ import Combine
 // MARK: - ArchiveStore
 @MainActor
 class ArchiveStore: ObservableObject {
-    @Published var records: [ArchiveRecord] = ArchiveRecord.samples
+    @Published var records: [ArchiveRecord] = []
 
     func add(_ record: ArchiveRecord) {
         records.insert(record, at: 0)

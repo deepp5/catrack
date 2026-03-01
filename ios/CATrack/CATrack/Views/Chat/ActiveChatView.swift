@@ -195,7 +195,7 @@ struct MachineContextBar: View {
         )
     }
 }
-
+//testing 
 // MARK: - TypingIndicatorView
 struct TypingIndicatorView: View {
     @State private var dotOpacity: [Double] = [0.3, 0.3, 0.3]
@@ -212,7 +212,7 @@ struct TypingIndicatorView: View {
                         .animation(
                             .easeInOut(duration: 0.5).repeatForever().delay(Double(i) * 0.15),
                             value: dotOpacity[i]
-                        )
+                    )
                 }
             }
             .padding(.horizontal, 14)

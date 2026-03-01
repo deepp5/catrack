@@ -257,8 +257,37 @@ struct TrendGridView: View {
 struct ArchiveHeroCard: View {
     let record: ArchiveRecord
 
+    /// Splits the aiSummary into named sections based on known headers.
+    private var parsedSections: [(title: String?, lines: [String])] {
+        let raw = record.aiSummary
+        let knownHeaders = ["Critical Findings:", "Recommendations:"]
+
+        var sections: [(title: String?, lines: [String])] = []
+        var currentTitle: String? = nil
+        var currentLines: [String] = []
+
+        for line in raw.components(separatedBy: "\n") {
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            if trimmed.isEmpty { continue }
+            if knownHeaders.contains(trimmed) {
+                if !currentLines.isEmpty {
+                    sections.append((currentTitle, currentLines))
+                }
+                currentTitle = trimmed.replacingOccurrences(of: ":", with: "")
+                currentLines = []
+            } else {
+                currentLines.append(trimmed)
+            }
+        }
+        if !currentLines.isEmpty {
+            sections.append((currentTitle, currentLines))
+        }
+        return sections
+    }
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: 12) {
+            // Machine header row
             HStack(alignment: .top) {
                 VStack(alignment: .leading, spacing: 4) {
                     Text(record.machine)
@@ -271,9 +300,46 @@ struct ArchiveHeroCard: View {
                 Spacer()
                 RiskScoreRing(score: record.riskScore)
             }
-            Text(record.aiSummary)
-                .font(.barlow(13))
-                .foregroundStyle(Color(hex: "#EBEBF5"))
+
+            Divider().background(Color.appBorder)
+
+            // Structured summary sections
+            ForEach(Array(parsedSections.enumerated()), id: \.offset) { _, section in
+                VStack(alignment: .leading, spacing: 6) {
+                    if let title = section.title {
+                        HStack(spacing: 6) {
+                            RoundedRectangle(cornerRadius: 2)
+                                .fill(title == "Critical Findings" ? Color.severityFail : Color.catYellow)
+                                .frame(width: 3, height: 12)
+                            Text(title.uppercased())
+                                .font(.dmMono(10, weight: .medium))
+                                .foregroundStyle(title == "Critical Findings" ? Color.severityFail : Color.catYellow)
+                        }
+                        VStack(alignment: .leading, spacing: 4) {
+                            ForEach(section.lines, id: \.self) { line in
+                                HStack(alignment: .top, spacing: 8) {
+                                    Circle()
+                                        .fill(Color.appMuted)
+                                        .frame(width: 4, height: 4)
+                                        .padding(.top, 6)
+                                    Text(line.hasPrefix("- ") ? String(line.dropFirst(2)) : line)
+                                        .font(.barlow(13))
+                                        .foregroundStyle(Color(hex: "#EBEBF5"))
+                                        .fixedSize(horizontal: false, vertical: true)
+                                }
+                            }
+                        }
+                    } else {
+                        // Executive summary — no header, plain prose
+                        ForEach(section.lines, id: \.self) { line in
+                            Text(line)
+                                .font(.barlow(13))
+                                .foregroundStyle(Color(hex: "#EBEBF5"))
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                    }
+                }
+            }
         }
         .padding(K.cardPadding)
         .background(Color.appPanel)
