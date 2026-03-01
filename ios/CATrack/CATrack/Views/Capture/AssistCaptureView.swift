@@ -17,6 +17,13 @@ struct AssistCaptureView: View {
     @State private var overlayResult = ""
     @State private var isWorking = false
 
+    enum AssistState {
+        case free
+        case guided(step: Int)
+    }
+
+    @State private var assistState: AssistState = .free
+
     var body: some View {
         ZStack {
             CameraPreview(session: camera.session)
@@ -98,6 +105,81 @@ struct AssistCaptureView: View {
         guard !isWorking else { return }
         isWorking = true
 
+        // Normalize command
+        let lower = cmd.lowercased()
+
+        // Resume guided mode from free state
+        if case .free = assistState,
+           lower.contains("continue") ||
+           lower.contains("resume") ||
+           lower.contains("ok") ||
+           lower.contains("sure") {
+
+            let items = orderedChecklistItems()
+            if !items.isEmpty {
+                assistState = .guided(step: 0)
+                overlayPhase = .done
+                overlayResult = """
+                GUIDED MODE RESUMED
+
+                Step 1 / \(items.count)
+                Inspect: \(items[0])
+
+                Say "check" when ready.
+                """
+            }
+
+            isWorking = false
+            hotword.resumeAfterCapture()
+            return
+        }
+
+        // Detect start of guided inspection
+        if lower.contains("start inspection") {
+            let allItems = orderedChecklistItems()
+            if !allItems.isEmpty {
+                assistState = .guided(step: 0)
+                overlayPhase = .done
+                overlayResult = """
+                GUIDED MODE STARTED
+
+                Step 1 / \(allItems.count)
+                Inspect: \(allItems[0])
+                """
+            }
+            isWorking = false
+            hotword.resumeAfterCapture()
+            return
+        }
+
+        // If in guided mode, handle control flow before capturing
+        if case .guided(let step) = assistState {
+            let items = orderedChecklistItems()
+
+            let isCheckCommand =
+                lower.contains("check") ||
+                lower.contains("inspect") ||
+                lower.contains("evaluate") ||
+                lower.contains("ready")
+
+            // If NOT a check command, treat as interrupt question (no capture)
+            if !isCheckCommand {
+                overlayPhase = .done
+                overlayResult = """
+                GUIDED MODE
+
+                Step \(step + 1) / \(items.count)
+                Inspect: \(items[step])
+
+                Want to continue inspection?
+                """
+
+                isWorking = false
+                hotword.resumeAfterCapture()
+                return
+            }
+        }
+
         overlayPhase = .heard
         overlayTranscript = cmd
         overlayResult = ""
@@ -145,8 +227,27 @@ struct AssistCaptureView: View {
         do {
             // Use analyzeVideoCommand → hits /analyze-video-command
             // This endpoint takes checklist state directly (no DB inspection_id needed)
+            let promptText: String
+
+            switch assistState {
+            case .free:
+                promptText = cmd
+            case .guided(let step):
+                let items = orderedChecklistItems()
+                if step < items.count {
+                    let component = items[step]
+                    promptText = """
+                    Inspect this component only: \(component).
+                    Determine PASS, MONITOR, or FAIL.
+                    Only evaluate this component.
+                    """
+                } else {
+                    promptText = cmd
+                }
+            }
+
             let resp = try await APIService.shared.analyzeVideoCommand(
-                userText: cmd,
+                userText: promptText,
                 currentChecklistState: checklistState,
                 framesBase64: [jpeg.base64EncodedString()]
             )
@@ -178,22 +279,61 @@ struct AssistCaptureView: View {
                 summary = "No updates found."
             }
 
-            overlayPhase = .done
-            overlayResult = summary
+            if case .guided(let step) = assistState {
+
+                let items = orderedChecklistItems()
+
+                if !updates.isEmpty {
+                    // Successful evaluation → auto advance
+                    let nextStep = step + 1
+
+                    if nextStep < items.count {
+                        assistState = .guided(step: nextStep)
+                        overlayResult = """
+                        GUIDED MODE
+
+                        Updated \(updates.count) item\(updates.count == 1 ? "" : "s")
+
+                        Step \(nextStep + 1) / \(items.count)
+                        Inspect: \(items[nextStep])
+
+                        Say "check" when ready.
+                        """
+                    } else {
+                        assistState = .free
+                        overlayResult = "Guided inspection complete."
+                    }
+                } else {
+                    // No updates detected → tell user to adjust
+                    overlayResult = """
+                    GUIDED MODE
+
+                    No issues detected.
+                    Move closer if needed.
+
+                    Say "check" when ready.
+                    """
+                }
+
+                overlayPhase = .done
+
+            } else {
+                overlayPhase = .done
+                overlayResult = summary
+            }
 
         } catch {
             overlayPhase = .error
             overlayResult = compact(error.localizedDescription)
         }
-
+    
         isWorking = false
 
-        // Show result for 2s, then reset for next command
-        try? await Task.sleep(nanoseconds: 2_000_000_000)
+        // Resume listening but keep overlay visible for guided flow
         hotword.resumeAfterCapture()
-        showOverlay = false
+        overlayPhase = .listening
         overlayTranscript = ""
-        overlayResult = ""
+        // Do NOT hide overlay; keep current result visible
     }
 
     // MARK: - Bottom Bar
@@ -248,6 +388,13 @@ struct AssistCaptureView: View {
         }
     }
 
+    private func orderedChecklistItems() -> [String] {
+        let sections = sheetVM.sectionsFor(machine.id)
+        return sections.flatMap { section in
+            section.fields.map { $0.label }
+        }
+    }
+
     /// Match backend key (item label) to the field in the sheet sections
     private func findField(_ backendKey: String, in sections: [SheetSection]) -> (sectionId: String, fieldId: String)? {
         for sec in sections {
@@ -264,3 +411,4 @@ struct AssistCaptureView: View {
         return String(t[t.startIndex..<t.index(t.startIndex, offsetBy: max)]) + "…"
     }
 }
+

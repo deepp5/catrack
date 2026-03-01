@@ -53,30 +53,34 @@ struct GlassHotwordOverlay: View {
 
             VStack(alignment: .leading, spacing: 5) {
                 Text(title)
-                    .font(.dmMono(12, weight: .semibold))
+                    .font(.dmMono(11, weight: .bold))
                     .foregroundStyle(.white)
+                    .textCase(.uppercase)
 
                 if !transcript.isEmpty {
-                    Text("\(transcript)")
-                        .font(.barlow(13, weight: .medium))
-                        .foregroundStyle(Color.white.opacity(0.92))
-                        .lineLimit(2)
+                    Text(transcript)
+                        .font(.barlow(13, weight: .semibold))
+                        .foregroundStyle(.white)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
                 }
 
                 if !result.isEmpty {
                     Text(result)
                         .font(.barlow(12))
-                        .foregroundStyle(Color.appMuted)
+                        .foregroundStyle(Color.white.opacity(0.85))
                         .lineLimit(2)
+                        .truncationMode(.tail)
                 }
             }
 
             Spacer(minLength: 0)
         }
         .padding(.horizontal, 14)
-        .padding(.vertical, 12)
+        .padding(.vertical, 10)
         // Full width — fills whatever container gives it horizontal space
         .frame(maxWidth: .infinity, alignment: .leading)
+        .frame(maxHeight: 110)
         .background(
             RoundedRectangle(cornerRadius: 16, style: .continuous)
                 .fill(.ultraThinMaterial)
