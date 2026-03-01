@@ -175,4 +175,35 @@ class APIService {
         let decoded = try decoder.decode(StartResponse.self, from: data)
         return decoded.id
     }
+
+    // MARK: - Generate Report
+
+
+    func generateReport(inspectionId: String) async throws -> GenerateReportResponse {
+        guard let url = URL(string: "\(baseURL)/generate-report") else {
+            throw URLError(.badURL)
+        }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+
+        let body = ["inspection_id": inspectionId]
+        request.httpBody = try JSONSerialization.data(withJSONObject: body)
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+
+        guard let http = response as? HTTPURLResponse,
+              (200...299).contains(http.statusCode) else {
+            let msg = String(data: data, encoding: .utf8) ?? "Bad server response"
+            throw NSError(domain: "APIService",
+                          code: (response as? HTTPURLResponse)?.statusCode ?? -1,
+                          userInfo: [NSLocalizedDescriptionKey: msg])
+        }
+
+        print("GenerateReport raw response:", String(data: data, encoding: .utf8) ?? "No response body")
+
+        let decoder = JSONDecoder()
+        return try decoder.decode(GenerateReportResponse.self, from: data)
+    }
 }

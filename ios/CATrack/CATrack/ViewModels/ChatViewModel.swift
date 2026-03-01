@@ -23,6 +23,7 @@ class ChatViewModel: ObservableObject {
             do {
                 let inspectionId = try await APIService.shared.startInspection(machineModel: machine.model)
                 activeInspectionIds[machine.id] = inspectionId
+                UserDefaults.standard.set(inspectionId, forKey: "activeInspectionId")
             } catch {
                 print("Failed to start inspection:", error)
             }

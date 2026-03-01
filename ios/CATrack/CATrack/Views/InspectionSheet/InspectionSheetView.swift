@@ -7,7 +7,9 @@ struct InspectionSheetView: View {
     @EnvironmentObject var archiveStore: ArchiveStore
     @EnvironmentObject var settingsStore: SettingsStore
 
-    @State private var showFinalizeConfirm = false
+    @State private var isGeneratingReport = false
+    @State private var reportErrorMessage: String? = nil
+    @State private var showReportError = false
 
     var machine: Machine? { machineStore.activeMachine }
     var sections: [SheetSection] {
@@ -57,7 +59,7 @@ struct InspectionSheetView: View {
                         }
 
                         FinalizeBar(sections: sections) {
-                            showFinalizeConfirm = true
+                            generateReport()
                         }
                     }
                 } else {
@@ -76,15 +78,126 @@ struct InspectionSheetView: View {
                     .padding(40)
                 }
             }
+            .alert("Report Error", isPresented: $showReportError, actions: {
+                Button("OK", role: .cancel) {}
+            }, message: {
+                Text(reportErrorMessage ?? "Unknown error")
+            })
             .navigationTitle("Inspection Sheet")
             .navigationBarTitleDisplayMode(.large)
-            .confirmationDialog("Finalize Inspection?", isPresented: $showFinalizeConfirm, titleVisibility: .visible) {
-                Button("Finalize & Archive", role: .none) { finalizeInspection() }
-                Button("Cancel", role: .cancel) {}
-            } message: {
-                Text("This will save the inspection to your archive.")
+        }
+    }
+
+
+    private func generateReport() {
+        guard !isGeneratingReport else { return }
+
+        // Try to locate the active backend inspection id.
+        // Prefer UserDefaults keys so this view compiles even if other stores change.
+        let possibleKeys = ["activeInspectionId", "inspectionId", "currentInspectionId", "active_inspection_id"]
+        let inspectionId = possibleKeys
+            .compactMap { UserDefaults.standard.string(forKey: $0) }
+            .first
+
+        guard let inspectionId, !inspectionId.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            reportErrorMessage = "Missing inspection_id. Make sure you started an inspection before generating a report."
+            showReportError = true
+            return
+        }
+
+        isGeneratingReport = true
+
+        Task {
+            do {
+                // Calls FastAPI /generate-report
+                let report = try await APIService.shared.generateReport(inspectionId: inspectionId)
+                await MainActor.run {
+                    isGeneratingReport = false
+                    finalizeInspection(with: report)
+                }
+            } catch {
+                await MainActor.run {
+                    isGeneratingReport = false
+                    reportErrorMessage = error.localizedDescription
+                    showReportError = true
+                }
             }
         }
+    }
+
+    private func finalizeInspection(with report: GenerateReportResponse) {
+        guard let machine = machine else { return }
+
+        let allFindings = sections.flatMap { section in
+            section.fields.compactMap { field -> FindingCard? in
+                guard field.status != .pass else { return nil }
+                return FindingCard(
+                    componentType: field.label,
+                    componentLocation: section.title,
+                    condition: field.note.isEmpty ? field.label : field.note,
+                    severity: field.status,
+                    confidence: 1.0,
+                    quantification: Quantification(
+                        failureProbability: field.status == .fail ? 0.8 : 0.4,
+                        timeToFailure: "N/A",
+                        safetyRisk: field.status == .fail ? 70 : 30,
+                        safetyLabel: field.status == .fail ? "High" : "Moderate",
+                        costLow: 0,
+                        costHigh: 0,
+                        downtimeLow: 0,
+                        downtimeHigh: 0
+                    )
+                )
+            }
+        }
+
+        let allStatuses = sections.map { $0.overallStatus }
+        let overallStatus = allStatuses.max(by: { severityRank($0) < severityRank($1) }) ?? .pass
+
+        // Prefer AI report risk if present.
+        let riskScore: Int
+        switch report.overallRisk.lowercased() {
+        case "high":
+            riskScore = 55
+        case "moderate":
+            riskScore = 75
+        case "low":
+            riskScore = 95
+        default:
+            switch overallStatus {
+            case .fail:    riskScore = 55
+            case .monitor: riskScore = 75
+            case .pass:    riskScore = 95
+            }
+        }
+
+        let summaryLines: [String] = [
+            report.executiveSummary,
+            "",
+            report.operationalReadiness,
+            "",
+            report.criticalFindings.isEmpty ? "" : ("Critical Findings:\n- " + report.criticalFindings.joined(separator: "\n- ")),
+            "",
+            report.recommendations.isEmpty ? "" : ("Recommendations:\n- " + report.recommendations.joined(separator: "\n- "))
+        ].filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+
+        let record = ArchiveRecord(
+            machine: machine.model,
+            serial: machine.serial,
+            date: Date(),
+            inspector: settingsStore.inspectorName,
+            site: machine.site,
+            hours: machine.hours,
+            riskScore: riskScore,
+            aiSummary: summaryLines.joined(separator: "\n"),
+            sections: sections,
+            findings: allFindings,
+            estimatedCost: 0,
+            trends: []
+        )
+        archiveStore.add(record)
+        machineStore.updateStatus(machineId: machine.id, status: overallStatus)
+        sheetVM.resetSheet(for: machine.id)
     }
 
     private func severityRank(_ s: FindingSeverity) -> Int {
@@ -96,6 +209,7 @@ struct InspectionSheetView: View {
     }
 
     private func finalizeInspection() {
+        // If we are generating via AI report, this path is not used.
         guard let machine = machine else { return }
 
         let allFindings = sections.flatMap { section in
@@ -317,7 +431,7 @@ struct FinalizeBar: View {
             }
             Spacer()
             Button(action: onFinalize) {
-                Text("FINALIZE")
+                Text("GENERATE REPORT")
                     .font(.dmMono(13, weight: .medium))
                     .foregroundStyle(.black)
                     .padding(.horizontal, 20)
@@ -334,4 +448,4 @@ struct FinalizeBar: View {
 }
 
 
-//Add commment 
+//Add commment

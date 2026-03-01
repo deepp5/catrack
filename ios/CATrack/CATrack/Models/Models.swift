@@ -253,3 +253,23 @@ struct FastAnalyzeResponse: Decodable {
     let answer: String?
     let followUpQuestions: [String]
 }
+
+struct GenerateReportRequest: Encodable {
+    let inspectionId: String
+}
+
+struct GenerateReportResponse: Decodable {
+    let executiveSummary: String
+    let criticalFindings: [String]
+    let recommendations: [String]
+    let operationalReadiness: String
+    let overallRisk: String
+
+    enum CodingKeys: String, CodingKey {
+        case executiveSummary = "executive_summary"
+        case criticalFindings = "critical_findings"
+        case recommendations
+        case operationalReadiness = "operational_readiness"
+        case overallRisk = "overall_risk"
+    }
+}
