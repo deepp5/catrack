@@ -1,4 +1,34 @@
 import SwiftUI
+import Combine
+
+// MARK: - KeyboardHeightObserver
+class KeyboardHeightObserver: ObservableObject {
+    @Published var height: CGFloat = 0
+
+    init() {
+        NotificationCenter.default.addObserver(
+            self, selector: #selector(keyboardWillShow),
+            name: UIResponder.keyboardWillShowNotification, object: nil
+        )
+        NotificationCenter.default.addObserver(
+            self, selector: #selector(keyboardWillHide),
+            name: UIResponder.keyboardWillHideNotification, object: nil
+        )
+    }
+
+    @objc func keyboardWillShow(_ notification: Notification) {
+        guard let frame = notification.userInfo?[UIResponder.keyboardFrameEndUserInfoKey] as? CGRect,
+              let duration = notification.userInfo?[UIResponder.keyboardAnimationDurationUserInfoKey] as? Double
+        else { return }
+        withAnimation(.easeInOut(duration: duration)) { height = frame.height }
+    }
+
+    @objc func keyboardWillHide(_ notification: Notification) {
+        guard let duration = notification.userInfo?[UIResponder.keyboardAnimationDurationUserInfoKey] as? Double
+        else { return }
+        withAnimation(.easeInOut(duration: duration)) { height = 0 }
+    }
+}
 
 // MARK: - ActiveChatView
 struct ActiveChatView: View {
@@ -6,6 +36,7 @@ struct ActiveChatView: View {
 
     @EnvironmentObject var chatVM: ChatViewModel
     @EnvironmentObject var sheetVM: InspectionSheetViewModel
+    @StateObject private var keyboard = KeyboardHeightObserver()
 
     @State private var inputText = ""
     @State private var showCamera = false
@@ -14,74 +45,81 @@ struct ActiveChatView: View {
     @State private var showAssist = false
     @FocusState private var inputFocused: Bool
 
+    private let safeAreaBottom: CGFloat = 34
+
     var messages: [Message] {
         chatVM.messagesFor(machine.id).filter { $0.role != .system }
     }
 
     var body: some View {
-        ZStack {
-            Color.appBackground.ignoresSafeArea()
+        VStack(spacing: 0) {
+            MachineContextBar(machine: machine, onAssist: { showAssist = true })
 
-            Image("cat_logo")
-                .resizable()
-                .scaledToFit()
-                .frame(maxWidth: 320)
-                .opacity(0.10)
-                .blur(radius: 0.6)
-                .allowsHitTesting(false)
-
-            VStack(spacing: 0) {
-                MachineContextBar(machine: machine, onAssist: { showAssist = true })
-
-                ScrollViewReader { proxy in
-                    ScrollView {
-                        LazyVStack(spacing: 12) {
-                            ForEach(messages) { msg in
-                                MessageBubbleView(message: msg)
-                                    .id(msg.id)
-                            }
-                            if chatVM.isLoading {
-                                TypingIndicatorView()
-                            }
+            ScrollViewReader { proxy in
+                ScrollView {
+                    LazyVStack(spacing: 12) {
+                        ForEach(messages) { msg in
+                            MessageBubbleView(message: msg)
+                                .id(msg.id)
                         }
-                        .padding(.horizontal, 12)
-                        .padding(.top, 12)
-                        .padding(.bottom, 8)
-                    }
-                    .onTapGesture {
-                        UIApplication.shared.sendAction(
-                            #selector(UIResponder.resignFirstResponder),
-                            to: nil, from: nil, for: nil)
-                    }
-                    .onChange(of: messages.count) { _, _ in
-                        if let last = messages.last {
-                            withAnimation { proxy.scrollTo(last.id, anchor: .bottom) }
+                        if chatVM.isLoading {
+                            TypingIndicatorView()
                         }
+                    }
+                    .padding(.horizontal, 12)
+                    .padding(.top, 12)
+                    .padding(.bottom, 8)
+                }
+                .onTapGesture {
+                    UIApplication.shared.sendAction(
+                        #selector(UIResponder.resignFirstResponder),
+                        to: nil, from: nil, for: nil
+                    )
+                }
+                .onChange(of: messages.count) { _, _ in
+                    if let last = messages.last {
+                        withAnimation { proxy.scrollTo(last.id, anchor: .bottom) }
                     }
                 }
-
-                InputBarView(
-                    text: $inputText,
-                    pendingMedia: chatVM.pendingMedia,
-                    isLoading: chatVM.isLoading,
-                    onSend: {
-                        let text = inputText.trimmingCharacters(in: .whitespacesAndNewlines)
-                        guard !text.isEmpty || !chatVM.pendingMedia.isEmpty else { return }
-                        inputText = ""
-                        Task {
-                            await chatVM.sendMessage(
-                                text: text, machineId: machine.id,
-                                machine: machine, sheetVM: sheetVM)
-                        }
-                    },
-                    onCamera: { showCamera = true },
-                    onVoice:  { showVoice  = true },
-                    onDocs:   { showDocs   = true },
-                    onRemoveMedia: { chatVM.removeMedia(id: $0) }
-                )
-                .focused($inputFocused)
             }
+
+            InputBarView(
+                text: $inputText,
+                pendingMedia: chatVM.pendingMedia,
+                isLoading: chatVM.isLoading,
+                onSend: {
+                    let text = inputText.trimmingCharacters(in: .whitespacesAndNewlines)
+                    guard !text.isEmpty || !chatVM.pendingMedia.isEmpty else { return }
+                    inputText = ""
+                    Task {
+                        await chatVM.sendMessage(
+                            text: text, machineId: machine.id,
+                            machine: machine, sheetVM: sheetVM
+                        )
+                    }
+                },
+                onCamera: { showCamera = true },
+                onVoice:  { showVoice  = true },
+                onDocs:   { showDocs   = true },
+                onRemoveMedia: { chatVM.removeMedia(id: $0) }
+            )
+            .focused($inputFocused)
         }
+        .padding(.bottom, keyboard.height > 0 ? keyboard.height - safeAreaBottom : 0)
+        .ignoresSafeArea(.keyboard, edges: .bottom)
+        .background(
+            ZStack {
+                Color.appBackground
+                Image("cat_logo")
+                    .resizable()
+                    .scaledToFit()
+                    .frame(maxWidth: 320)
+                    .opacity(0.10)
+                    .blur(radius: 0.6)
+                    .allowsHitTesting(false)
+            }
+            .ignoresSafeArea()
+        )
         .fullScreenCover(isPresented: $showAssist) {
             AssistCaptureView(machine: machine)
                 .environmentObject(chatVM)
@@ -97,7 +135,8 @@ struct ActiveChatView: View {
                 Task {
                     await chatVM.sendVoiceNote(
                         url: url, duration: duration,
-                        machineId: machine.id, machine: machine, sheetVM: sheetVM)
+                        machineId: machine.id, machine: machine, sheetVM: sheetVM
+                    )
                 }
             }
         }
@@ -122,11 +161,11 @@ struct MachineContextBar: View {
                 .font(.system(size: 16))
 
             VStack(alignment: .leading, spacing: 1) {
-                Text(machine.serial)
-                    .font(.dmMono(12, weight: .medium))
-                    .foregroundStyle(Color.appMuted)
-                Text("\(machine.site) · \(machine.hours) hrs")
-                    .font(.barlow(12))
+                Text("\(machine.model) Inspection")
+                    .font(.system(size: 13, weight: .bold, design: .rounded))
+                    .foregroundStyle(.white)
+                Text(machine.site)
+                    .font(.system(size: 11, weight: .medium, design: .rounded))
                     .foregroundStyle(Color.appMuted)
             }
 
