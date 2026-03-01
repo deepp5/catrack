@@ -71,6 +71,10 @@ struct InputBarView: View {
                     .padding(.vertical, 9)
                     .background(Color.appPanel)
                     .clipShape(RoundedRectangle(cornerRadius: K.cornerRadius))
+                    .submitLabel(.send)
+                    .onSubmit {
+                        if canSend { onSend() }
+                    }
 
                 // Send button
                 Button(action: onSend) {

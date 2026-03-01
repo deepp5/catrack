@@ -147,3 +147,17 @@ struct MemoryBadgeView: View {
         .clipShape(RoundedRectangle(cornerRadius: 8))
     }
 }
+
+// MARK: - AIAvatarView
+struct AIAvatarView: View {
+    var body: some View {
+        ZStack {
+            Circle()
+                .fill(Color.catYellow.opacity(0.2))
+                .frame(width: 28, height: 28)
+            Text("AI")
+                .font(.dmMono(9, weight: .medium))
+                .foregroundStyle(Color.catYellow)
+        }
+    }
+}
