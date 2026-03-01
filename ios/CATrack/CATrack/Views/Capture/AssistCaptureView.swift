@@ -139,18 +139,31 @@ struct AssistCaptureView: View {
         }
 
         // Detect start of guided inspection
-        if lower.contains("start inspection") {
+        if lower.contains("start") && lower.contains("inspection") {
+
             let allItems = orderedChecklistItems()
+
             if !allItems.isEmpty {
+
                 assistState = .guided(step: 0)
+
+                showOverlay = true
                 overlayPhase = .done
+                overlayTranscript = ""
+
                 overlayResult = """
                 GUIDED MODE STARTED
 
                 Step 1 / \(allItems.count)
                 Inspect: \(allItems[0])
+
+                Say "check" when ready.
                 """
+            } else {
+                overlayPhase = .error
+                overlayResult = "No checklist items found."
             }
+
             isWorking = false
             hotword.resumeAfterCapture()
             return
@@ -333,11 +346,15 @@ struct AssistCaptureView: View {
     
         isWorking = false
 
-        // Resume listening but keep overlay visible for guided flow
+        // Resume listening but DO NOT override overlay state in guided mode
         hotword.resumeAfterCapture()
-        overlayPhase = .listening
-        overlayTranscript = ""
-        // Do NOT hide overlay; keep current result visible
+
+        // Only reset to listening phase if we are in free mode
+        if case .free = assistState {
+            overlayPhase = .listening
+            overlayTranscript = ""
+        }
+        // In guided mode we keep overlayPhase and overlayResult as-is
     }
 
     // MARK: - Bottom Bar
