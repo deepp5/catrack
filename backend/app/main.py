@@ -616,8 +616,8 @@ def debug_next_media():
 
 @app.post("/sync-checklist")
 def sync_checklist(req: SyncChecklistRequest):
-    # Validate inspection exists
-    resp = (
+    # Ensure the inspection exists before updating
+    inspection_result = (
         supabase.table("inspections")
         .select("id")
         .eq("id", req.inspection_id)
@@ -625,13 +625,14 @@ def sync_checklist(req: SyncChecklistRequest):
         .execute()
     )
 
-    if not resp.data:
+    if not inspection_result.data:
         raise HTTPException(status_code=404, detail="Inspection not found")
 
-    # Update checklist_json directly
-    supabase.table("inspections").update(
-        {"checklist_json": req.checklist}
-    ).eq("id", req.inspection_id).execute()
+    updated_data = {"checklist_json": req.checklist}
+
+    supabase.table("inspections").update(updated_data).eq(
+        "id", req.inspection_id
+    ).execute()
 
     return {"status": "ok"}
 
