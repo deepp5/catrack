@@ -129,18 +129,22 @@ if Supermemory and SUPERMEMORY_API_KEY:
 
 
 def sm_add_memory(content: str, tags: list[str]):
-    """Store a memory snippet. Safe no-op if Supermemory not configured."""
+    """Save a memory snippet. If Supermemory is not configured, safely return."""
+
     if not sm_client:
         return None
-    try:
-        resp = sm_client.add(content=content, container_tags=tags)
-        # Helpful during hackathon debugging
-        print("Supermemory add ok:", type(resp), resp)
-        return resp
-    except Exception as e:
-        print("Supermemory add failed:", e)
-        return None
 
+    try:
+        result = sm_client.add(content=content, container_tags=tags)
+
+        # Useful for debugging during development / hackathons
+        print("Supermemory add success:", type(result), result)
+
+        return result
+
+    except Exception as error:
+        print("Supermemory add failed:", error)
+        return None
 
 def sm_search_memory(query: str, tags: list[str], k: int = 5) -> list[str]:
     """Search memory snippets. Safe no-op if not configured.
