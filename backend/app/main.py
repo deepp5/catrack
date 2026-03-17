@@ -1055,23 +1055,31 @@ def _download_media_bytes(media_id: str) -> tuple[dict, bytes]:
 
 
 def extract_mfcc_features(audio_bytes: bytes, ext: str = ".mp3", sr: int = 16000) -> np.ndarray:
-    """Compute a compact audio fingerprint: MFCC mean+std (40-dim)."""
-    with tempfile.NamedTemporaryFile(suffix=ext, delete=True) as tmp:
-        tmp.write(audio_bytes)
-        tmp.flush()
-        y, sr = librosa.load(tmp.name, sr=sr, mono=True)
+    """Generate a compact audio fingerprint using MFCC mean and standard deviation (40-dim)."""
 
-    # MFCC: (n_mfcc, T)
-    mfcc = librosa.feature.mfcc(y=y, sr=sr, n_mfcc=20)
-    feat = np.concatenate([mfcc.mean(axis=1), mfcc.std(axis=1)], axis=0)
-    return feat.astype(np.float32)
+    with tempfile.NamedTemporaryFile(suffix=ext, delete=True) as temp_file:
+        temp_file.write(audio_bytes)
+        temp_file.flush()
+        audio_signal, sample_rate = librosa.load(temp_file.name, sr=sr, mono=True)
+
+    # MFCC shape: (n_mfcc, time_frames)
+    mfcc_features = librosa.feature.mfcc(y=audio_signal, sr=sample_rate, n_mfcc=20)
+
+    feature_vector = np.concatenate(
+        [mfcc_features.mean(axis=1), mfcc_features.std(axis=1)],
+        axis=0
+    )
+
+    return feature_vector.astype(np.float32)
 
 
 def anomaly_score(feat: np.ndarray, mean: np.ndarray, std: np.ndarray) -> float:
-    """Simple z-score distance mapped to 0-100."""
-    z = np.abs((feat - mean) / (std + 1e-6))
-    raw = float(np.mean(z))
-    score = min(100.0, raw * 20.0)
+    """Calculate anomaly score using z-score distance mapped to a 0–100 range."""
+
+    z_scores = np.abs((feat - mean) / (std + 1e-6))
+    avg_distance = float(np.mean(z_scores))
+
+    score = min(100.0, avg_distance * 20.0)
     return score
 
 
