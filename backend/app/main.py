@@ -514,16 +514,15 @@ def analyze(req: AnalyzeRequest):
 def root():
     return {"message": "CATrack backend running"}
 
-def public_storage_url(bucket: str, path: str) -> str:
-    # Works when the bucket is PUBLIC
-    return f"{SUPABASE_URL}/storage/v1/object/public/{bucket}/{path}"
 
+def public_storage_url(bucket: str, path: str) -> str:
+    """Generate public URL for Supabase storage (public buckets only)."""
+    return f"{SUPABASE_URL}/storage/v1/object/public/{bucket}/{path}"
 
 
 @app.get("/health")
 def health():
     return {"ok": True}
-
 
 
 # Supermemory debug status endpoint
@@ -534,7 +533,6 @@ def debug_memory_status():
         "has_api_key": bool(SUPERMEMORY_API_KEY),
         "client_type": str(type(sm_client)) if sm_client else None,
     }
-
 # Supermemory debug endpoint
 @app.get("/debug/memory")
 def debug_memory(machine_id: str, q: str, k: int = 5):
