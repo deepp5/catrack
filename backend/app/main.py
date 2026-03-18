@@ -250,22 +250,15 @@ app.add_middleware(
 
 @app.post("/start-inspection")
 def start_inspection(machine_model: str):
-    # Initialize checklist state
     initial_state = {}
-
-    # Merge all checklist sections
     for section in FULL_CHECKLIST.values():
         initial_state.update(section)
 
-    # Insert into Supabase
-    response = (
-        supabase
-        .table("inspections")
-        .insert({
-            "machine_model": machine_model,
-            "checklist_json": initial_state
-        })
-        .execute()
+    resp = supabase.table("inspections").insert({
+        "machine_model": machine_model,
+        "checklist_json": initial_state
+    }).execute()
+
     return resp.data[0]
 class AnalyzeVideoCommandRequest(BaseModel):
     user_text: str
