@@ -446,14 +446,60 @@ def run_inspection_logic(
 
 @app.post("/analyze")
 def analyze(req: AnalyzeRequest):
-    #Fetch inspection from DB
-    resp = (
-        supabase.table("inspections")
-        .select("id, checklist_json, machine_model")
-        .eq("id", req.inspection_id)
-        .limit(1)
-        .execute()
-    )
+    """
+    Analyze inspection input and update checklist.
+    """
+
+    try:
+        # 1. Fetch inspection from DB
+        resp = (
+            supabase.table("inspections")
+            .select("id, checklist_json, machine_model")
+            .eq("id", req.inspection_id)
+            .limit(1)
+            .execute()
+        )
+
+        if not resp.data:
+            raise HTTPException(status_code=404, detail="Inspection not found")
+
+        inspection = resp.data[0]
+        checklist = inspection["checklist_json"]
+
+        # 2. (Placeholder) AI Processing Logic
+        # 👉 Replace this with your real AI logic
+        updates = {
+            "engine_condition": "monitor",
+            "notes": req.input_text
+        }
+
+        # Merge updates into checklist
+        checklist.update(updates)
+
+        # 3. Save updated checklist
+        update_resp = (
+            supabase.table("inspections")
+            .update({
+                "checklist_json": checklist,
+                "updated_at": datetime.utcnow().isoformat()
+            })
+            .eq("id", req.inspection_id)
+            .execute()
+        )
+
+        if not update_resp.data:
+            raise HTTPException(status_code=500, detail="Failed to update inspection")
+
+        # 4. Return clean response
+        return {
+            "status": "success",
+            "inspection_id": req.inspection_id,
+            "updates": updates,
+            "updated_checklist": checklist
+        }
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
     rows = resp.data or []
     if not rows:
